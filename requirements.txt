@@ -1,0 +1,4 @@
+Pillow
+reportlab
+numpy
+scikit-learn
