@@ -1,32 +1,78 @@
 #!/usr/bin/env python3
+# =============================================================================
+#  generate_pattern.py
+# -----------------------------------------------------------------------------
+#  Ядро приложения: конвертирует растровое изображение в полноценный PDF-
+#  альбом со схемой вышивки крестиком по палитре DMC и, опционально, в файл
+#  формата OXS (Open Cross Stitch).
+#
+#  Пайплайн работы (высокоуровнево):
+#    1) Загрузить картинку и отресайзить её под ширину в крестиках.
+#    2) Кластеризовать пиксели по KMeans, получив N центральных цветов.
+#    3) Привязать каждый центральный цвет к ближайшему цвету DMC.
+#    4) Посчитать стежки по цветам и раздать символы легенды.
+#    5) Опционально обнаружить "бленды" (смеси двух цветов на границах).
+#    6) Нарисовать PDF: титул → превью стежков → легенда → страницы схемы.
+#    7) При необходимости экспортировать OXS (XML-совместимый формат).
+#
+#  Структура файла:
+#    0. Импорты и вспомогательные константы
+#    1. Регистрация кириллических шрифтов для PDF
+#    2. Константы размера страницы
+#    3. База данных цветов DMC (DMC_COLORS)
+#    4. Символы для легенды (SYMBOLS / EXTRA_SYMBOLS / ALL_SYMBOLS)
+#    5. Вспомогательные функции (поиск ближайшего DMC, получение RGB и т.п.)
+#    6. Конвертация изображения в грид пиксельной схемы
+#    7. Автоопределение блендов (смешанных цветов)
+#    8. Построение страниц PDF (титул, имитация стежков, легенда, схема)
+#    9. Главная функция generate_pattern()
+#   10. Экспорт в формат OXS
+#   11. Точка входа CLI (__main__)
+#
+#  Поддержка кириллицы — через шрифт DejaVu Sans.
+# =============================================================================
 """
 Cross-Stitch Pattern PDF Generator
 Generates professional PDF patterns from images with DMC color palette.
 Supports Cyrillic text via DejaVu Sans.
 """
 
+# -----------------------------------------------------------------------------
+# 0. ИМПОРТЫ
+# -----------------------------------------------------------------------------
 import argparse, math, os, sys, io
-from collections import Counter
-import numpy as np
-from PIL import Image
-from sklearn.cluster import KMeans
+from collections import Counter  # удобный счётчик повторений (для подсчёта стежков)
+import numpy as np                # быстрые операции над массивами пикселей
+from PIL import Image             # загрузка и обработка растровых изображений
+from sklearn.cluster import KMeans  # кластеризация цветов (квантование палитры)
 
-# DMC to Gamma mapping (Russian thread brand)
+# Загружаем таблицу соответствия DMC <-> Гамма (российский аналог ниток).
+# Модуль лежит рядом с этим файлом; добавляем его каталог в sys.path,
+# чтобы корректно импортировать при любом текущем рабочем каталоге.
 try:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from dmc_gamma_map import DMC_TO_GAMMA
 except:
+    # Если карты нет — работаем только с DMC, не падая.
     DMC_TO_GAMMA = {}
 
-# === reportlab imports ===
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import mm, cm
-from reportlab.lib import colors
-from reportlab.pdfgen import canvas
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+# -----------------------------------------------------------------------------
+# 1. ИМПОРТЫ ИЗ REPORTLAB (генерация PDF)
+# -----------------------------------------------------------------------------
+from reportlab.lib.pagesizes import A4          # стандартный размер листа A4
+from reportlab.lib.units import mm, cm          # перевод миллиметров/сантиметров в поинты
+from reportlab.lib import colors                # встроенные цвета reportlab
+from reportlab.pdfgen import canvas             # основной "холст" PDF
+from reportlab.pdfbase import pdfmetrics        # регистрация кастомных шрифтов
+from reportlab.pdfbase.ttfonts import TTFont    # поддержка TTF-шрифтов
 
-# Register Cyrillic fonts
+# -----------------------------------------------------------------------------
+# 2. РЕГИСТРАЦИЯ КИРИЛЛИЧЕСКИХ ШРИФТОВ
+# -----------------------------------------------------------------------------
+# DejaVu Sans содержит кириллицу, в отличие от встроенных шрифтов reportlab.
+# Если его нет (например, запуск на Windows без установленного DejaVu) —
+# откатываемся на Helvetica. В этом случае кириллица может отображаться
+# некорректно, но PDF всё равно соберётся.
 FONT = 'DejaVuSans'
 FONT_BOLD = 'DejaVuSans-Bold'
 try:
@@ -36,10 +82,21 @@ except:
     FONT = 'Helvetica'
     FONT_BOLD = 'Helvetica-Bold'
 
-PAGE_W, PAGE_H = A4  # 595.27 x 841.89 points
-MARGIN = 30
+# -----------------------------------------------------------------------------
+# 3. КОНСТАНТЫ СТРАНИЦЫ
+# -----------------------------------------------------------------------------
+PAGE_W, PAGE_H = A4  # размер листа A4 в поинтах: 595.27 x 841.89
+MARGIN = 30          # стандартное поле со всех сторон (в поинтах, ≈ 10.6 мм)
 
-# === DMC Color Database (top ~120 most used colors) ===
+# =============================================================================
+# 4. БАЗА ДАННЫХ ЦВЕТОВ DMC
+# -----------------------------------------------------------------------------
+# Словарь со всеми поддерживаемыми цветами DMC. Ключ — код DMC (строка),
+# значение — кортеж (человекочитаемое имя, RGB-кортеж).
+# Эти данные используются двумя путями:
+#   1) поиск ближайшего DMC к произвольному RGB (find_nearest_dmc);
+#   2) отрисовка цветных квадратиков в легенде и на титульном превью.
+# =============================================================================
 DMC_COLORS = {
     "blanc": ("Белый", (255, 255, 255)),
     "310": ("Чёрный", (0, 0, 0)),
@@ -470,16 +527,44 @@ DMC_COLORS = {
     "3866": ("Mocha Brn-UL VY LT", (250, 246, 240)),
 }
 
-# Symbols for chart (38 unique, easily distinguishable)
+# =============================================================================
+# 5. СИМВОЛЫ ДЛЯ ЛЕГЕНДЫ СХЕМЫ
+# -----------------------------------------------------------------------------
+# Каждый цвет DMC в итоговой схеме рисуется не только цветной клеткой,
+# но и отдельным символом — так пользователь может отличать цвета даже
+# при ч/б печати. Основной набор ограничен 38 "хорошо различимыми" знаками;
+# если цветов больше — подключаем EXTRA_SYMBOLS.
+# =============================================================================
 SYMBOLS = list("★ABTFWRн■●LVSKEDYZHMGNCU+×◆▲♥badeP")
 EXTRA_SYMBOLS = list("☆◇○□△▽◎✦✧❖⬟⬡⬢⬣⊕⊗⊙⊛⊞⊟⊠⊡")
 ALL_SYMBOLS = SYMBOLS + EXTRA_SYMBOLS
 
 
+# =============================================================================
+# 6. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ РАБОТЫ С ЦВЕТАМИ
+# =============================================================================
 def find_nearest_dmc(rgb, palette):
-    """Find the closest DMC color to the given RGB value."""
+    """Находит код DMC-цвета, ближайшего к переданному RGB.
+
+    Используется метрика "квадрат евклидова расстояния" в RGB-пространстве.
+    Это не идеально с точки зрения восприятия (лучше было бы Lab/ΔE),
+    но быстро и даёт приемлемый результат для схем вышивки.
+
+    Parameters
+    ----------
+    rgb : tuple[int, int, int]
+        Целевой цвет.
+    palette : dict[str, tuple[str, tuple[int, int, int]]]
+        Палитра в формате {код: (имя, (r, g, b))}.
+
+    Returns
+    -------
+    str | None
+        Код ближайшего цвета DMC.
+    """
     min_dist = float('inf')
     best = None
+    # Обходим все цвета палитры и ищем минимум квадрата расстояния.
     for code, (name, dmc_rgb) in palette.items():
         dist = sum((a - b) ** 2 for a, b in zip(rgb, dmc_rgb))
         if dist < min_dist:
@@ -488,24 +573,49 @@ def find_nearest_dmc(rgb, palette):
     return best
 
 
+# =============================================================================
+# 7. КОНВЕРТАЦИЯ ИЗОБРАЖЕНИЯ В СЕТКУ КРЕСТИКОВ
+# =============================================================================
 def image_to_pattern(image_path, target_width, max_colors):
-    """Convert an image to a cross-stitch pattern grid."""
+    """Конвертирует изображение в двумерный "грид" схемы вышивки.
+
+    Алгоритм:
+      1) Открываем картинку и приводим к RGB.
+      2) Ресайзим до нужной ширины в крестиках (высота — пропорционально).
+      3) Кластеризуем все пиксели алгоритмом KMeans (квантование палитры).
+      4) Каждый центр кластера привязываем к ближайшему цвету DMC.
+      5) По меткам кластеров собираем сетку DMC-кодов.
+      6) Считаем стежки по цветам и раздаём символы легенды.
+
+    Returns
+    -------
+    tuple
+        (dmc_grid, stitch_counts, color_symbols, grid_h, grid_w, preview_img)
+    """
+    # --- 1. Загрузка и ресайз ---
     img = Image.open(image_path).convert('RGB')
     w, h = img.size
+    # Сохраняем пропорции: target_width задан, высота считается пропорционально.
     target_height = int(target_width * h / w)
 
-    # Resize to target stitch dimensions
+    # LANCZOS — качественный фильтр для уменьшения изображения.
     img_resized = img.resize((target_width, target_height), Image.LANCZOS)
+    # Разворачиваем картинку в массив пикселей N×3 для KMeans.
     pixels = np.array(img_resized).reshape(-1, 3)
 
-    # Quantize colors using KMeans
+    # --- 2. Квантование цветов через KMeans ---
+    # Не имеет смысла просить больше кластеров, чем уникальных пикселей.
     n_colors = min(max_colors, len(set(map(tuple, pixels))))
+    # random_state фиксируем, чтобы результат был воспроизводимым.
+    # n_init=10 — запускаем алгоритм с 10 разных инициализаций и берём лучший.
     kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=10)
     kmeans.fit(pixels)
-    centroids = kmeans.cluster_centers_.astype(int)
-    labels = kmeans.labels_
+    centroids = kmeans.cluster_centers_.astype(int)  # центры кластеров (RGB)
+    labels = kmeans.labels_                           # метка кластера для каждого пикселя
 
-    # Map each centroid to nearest DMC color
+    # --- 3. Привязка центров кластеров к цветам DMC ---
+    # Следим, чтобы два центра не привязались к одному и тому же DMC-коду:
+    # для этого после каждой привязки исключаем выбранный код из кандидатов.
     dmc_map = {}
     used_codes = set()
     for i, centroid in enumerate(centroids):
@@ -514,20 +624,23 @@ def image_to_pattern(image_path, target_width, max_colors):
         dmc_map[i] = code
         used_codes.add(code)
 
-    # Build the grid
+    # --- 4. Сборка итоговой сетки DMC-кодов ---
     grid = labels.reshape(target_height, target_width)
     dmc_grid = [[dmc_map[grid[r][c]] for c in range(target_width)] for r in range(target_height)]
 
-    # Count stitches per color
+    # --- 5. Подсчёт количества стежков по каждому цвету ---
     stitch_counts = Counter()
     for row in dmc_grid:
         for code in row:
             stitch_counts[code] += 1
 
-    # Sort by count descending
+    # Сортируем цвета по убыванию частоты — самые массивные получают самые
+    # заметные символы (звёздочка, буквы и т.д.).
     sorted_colors = sorted(stitch_counts.keys(), key=lambda c: -stitch_counts[c])
 
-    # Assign symbols
+    # --- 6. Назначение символов ---
+    # Если цветов больше, чем символов в ALL_SYMBOLS, используем кружки с цифрами
+    # из диапазона Unicode (chr(9312) = ①, chr(9313) = ② и т.д.).
     color_symbols = {}
     for i, code in enumerate(sorted_colors):
         color_symbols[code] = ALL_SYMBOLS[i] if i < len(ALL_SYMBOLS) else chr(9312 + i)
@@ -535,36 +648,61 @@ def image_to_pattern(image_path, target_width, max_colors):
     return dmc_grid, stitch_counts, color_symbols, target_height, target_width, img_resized
 
 
-# === BLEND SYMBOLS (distinct from main symbols) ===
+# =============================================================================
+# 8. АВТООПРЕДЕЛЕНИЕ БЛЕНДОВ (СМЕШАННЫХ ЦВЕТОВ)
+# -----------------------------------------------------------------------------
+# Бленд — это стежок, где одновременно используются две разные нитки DMC,
+# что даёт промежуточный оттенок. Имеет смысл только на границах переходов,
+# где соседствуют всего два цвета.
+# =============================================================================
+# Отдельный набор символов — кружки с цифрами ①...⑳ — чтобы бленды нельзя
+# было спутать с обычными цветами в легенде.
 BLEND_SYMBOLS = list("①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳")
 
 
 def detect_blends(dmc_grid, stitch_counts, color_symbols):
-    """Auto-detect transition zones and create blend entries.
-    Returns: blend_grid (dict of (y,x)->(code1,code2)), updated stitch_counts, color_symbols.
-    Blend keys are 'b:CODE1+CODE2' (sorted)."""
+    """Находит зоны переходов между двумя цветами и помечает их как бленды.
+
+    Бленды задаются специальным "кодом" формата "b:CODE1+CODE2" (пара отсортирована).
+    Такие коды добавляются в stitch_counts и color_symbols рядом с обычными.
+
+    Критерий "это бленд":
+      * у пикселя ровно один отличающийся соседний цвет (граница 2 цветов);
+      * у пикселя есть хотя бы один сосед того же цвета (не изолированная точка);
+      * пара (code1, code2) встречается >= 20 раз (иначе бленд бесполезен).
+
+    Returns
+    -------
+    tuple[dict, list]
+        blend_grid    — {(y, x): (code1, code2)} позиции помеченных блендов;
+        sorted_blends — список пар (code1, code2) в порядке убывания частоты.
+    """
     grid_h = len(dmc_grid)
     grid_w = len(dmc_grid[0])
-    blend_counts = {}  # (code1, code2) -> count
+    # Словари-накопители: сколько раз встречалась пара и где именно.
+    blend_counts = {}     # (code1, code2) -> количество стежков
     blend_positions = {}  # (y, x) -> (code1, code2)
 
+    # --- Первый проход: отмечаем все потенциальные бленды ---
     for y in range(grid_h):
         for x in range(grid_w):
             code = dmc_grid[y][x]
             neighbors = set()
-            for dy, dx in [(-1,0),(1,0),(0,-1),(0,1)]:
+            # Смотрим 4-связных соседей (сверху, снизу, слева, справа).
+            for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 ny, nx = y + dy, x + dx
                 if 0 <= ny < grid_h and 0 <= nx < grid_w:
                     nc = dmc_grid[ny][nx]
                     if nc != code:
                         neighbors.add(nc)
-            # Only blend if exactly on a 2-color boundary (1 different neighbor color)
+            # Условие "граница ровно двух цветов": есть 1 отличающийся сосед.
             if len(neighbors) == 1:
                 other = neighbors.pop()
                 pair = tuple(sorted([code, other]))
-                # Only count if this pixel has >=2 same-color neighbors (not isolated)
+                # Защита от "одиноких" пикселей: проверим, есть ли хотя бы один
+                # сосед того же цвета, что и текущий пиксель.
                 same_count = 0
-                for dy, dx in [(-1,0),(1,0),(0,-1),(0,1)]:
+                for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                     ny, nx = y + dy, x + dx
                     if 0 <= ny < grid_h and 0 <= nx < grid_w and dmc_grid[ny][nx] == code:
                         same_count += 1
@@ -572,17 +710,17 @@ def detect_blends(dmc_grid, stitch_counts, color_symbols):
                     blend_counts[pair] = blend_counts.get(pair, 0) + 1
                     blend_positions[(y, x)] = pair
 
-    # Only keep blend pairs with enough stitches (>= 20) to be meaningful
+    # --- Фильтрация: оставляем только пары с хотя бы 20 стежками ---
     valid_blends = {p for p, c in blend_counts.items() if c >= 20}
-    # Filter positions
     blend_positions = {pos: pair for pos, pair in blend_positions.items() if pair in valid_blends}
 
-    # Sort blends by count descending
+    # Сортируем по популярности, чтобы наиболее часто встречающиеся бленды
+    # получили первые (самые заметные) символы.
     sorted_blends = sorted(valid_blends, key=lambda p: -blend_counts[p])
-    # Limit to available blend symbols
+    # Символов для блендов всего 20 (①..⑳) — обрезаем избыток.
     sorted_blends = sorted_blends[:len(BLEND_SYMBOLS)]
 
-    # Create blend entries
+    # --- Регистрируем бленды в общих структурах стежков/символов ---
     blend_symbols = {}
     for i, pair in enumerate(sorted_blends):
         key = f"b:{pair[0]}+{pair[1]}"
@@ -590,21 +728,21 @@ def detect_blends(dmc_grid, stitch_counts, color_symbols):
         stitch_counts[key] = blend_counts[pair]
         color_symbols[key] = BLEND_SYMBOLS[i]
 
-    # Build pair->key mapping
+    # Быстрый маппинг пара -> специальный строковый ключ.
     pair_to_key = {pair: f"b:{pair[0]}+{pair[1]}" for pair in sorted_blends}
 
-    # Update grid
+    # --- Обновляем grid: заменяем обычные коды на "b:..." в позициях блендов ---
     blend_grid = {}
     for (y, x), pair in blend_positions.items():
         if pair in pair_to_key:
             key = pair_to_key[pair]
             blend_grid[(y, x)] = pair
             dmc_grid[y][x] = key
-            # Adjust original color counts
-            orig_code = pair[0] if dmc_grid[y][x] == key else pair[1]
-            # Already replaced, find which was original by checking neighbors
-            # Just decrement both slightly - counts are approximate anyway
+            # Примечание: точный пересчёт stitch_counts для исходных цветов
+            # сознательно не делается — небольшая неточность допустима,
+            # поскольку счётчики в легенде носят оценочный характер.
 
+    # Лог для оператора — сколько блендов нашли.
     n_blends = len(sorted_blends)
     n_stitches = sum(blend_counts[p] for p in sorted_blends) if sorted_blends else 0
     print(f"Blends: {n_blends} pairs, {n_stitches} stitches")
@@ -612,31 +750,44 @@ def detect_blends(dmc_grid, stitch_counts, color_symbols):
 
 
 def get_color_rgb(code):
-    """Get RGB tuple for a code, including blend codes 'b:X+Y'."""
+    """Возвращает RGB для любого кода, в том числе для бленда 'b:X+Y'.
+
+    Для бленда цвет рассчитывается как поканальное среднее двух исходных цветов.
+    """
     if str(code).startswith("b:"):
         parts = str(code)[2:].split("+")
-        _, rgb1 = DMC_COLORS.get(parts[0], ("?", (128,128,128)))
-        _, rgb2 = DMC_COLORS.get(parts[1], ("?", (128,128,128)))
-        return tuple((a+b)//2 for a,b in zip(rgb1, rgb2))
-    _, rgb = DMC_COLORS.get(code, ("?", (128,128,128)))
+        _, rgb1 = DMC_COLORS.get(parts[0], ("?", (128, 128, 128)))
+        _, rgb2 = DMC_COLORS.get(parts[1], ("?", (128, 128, 128)))
+        # Среднее покомпонентно — целочисленное деление.
+        return tuple((a + b) // 2 for a, b in zip(rgb1, rgb2))
+    _, rgb = DMC_COLORS.get(code, ("?", (128, 128, 128)))
     return rgb
 
 
+# =============================================================================
+# 9. ОБЩИЕ ЭЛЕМЕНТЫ PDF
+# =============================================================================
 def draw_footer(c, page_w, page_h, brand, brand_note, margin=MARGIN):
-    """Draw footer with brand and copyright."""
+    """Рисует нижний колонтитул (бренд + копирайт) на текущей странице PDF."""
     c.setFont(FONT, 7)
-    c.setFillColor(colors.Color(0.5, 0.5, 0.5))
+    c.setFillColor(colors.Color(0.5, 0.5, 0.5))  # серый, чтобы не отвлекал
     footer_text = f"{brand}  —  {brand_note}" if brand_note else brand
+    # drawCentredString — рисует строку, центрированную относительно X.
     c.drawCentredString(page_w / 2, margin - 15, footer_text)
 
 
+# =============================================================================
+# 10. СТРАНИЦЫ PDF
+# =============================================================================
 def create_title_page(c, title, grid_h, grid_w, n_colors, total_stitches,
                       aida, brand, brand_note, preview_img):
-    """Page 1: Header → preview image → info box → included → footer.
-    The preview image always sits between the title bar and the info section,
-    scaled to fill available space while keeping aspect ratio."""
+    """Титульная страница PDF: шапка → превью → инфо-блок → список включённого → футер.
 
-    # === 1. HEADER BAR (top) ===
+    Превью всегда располагается между шапкой и инфо-блоком и масштабируется
+    так, чтобы занять всё доступное пространство без искажения пропорций.
+    """
+
+    # ----- 1. Шапка страницы (зелёная плашка сверху) -----
     header_h = 80
     c.setFillColor(colors.Color(0.2, 0.3, 0.2))
     c.rect(0, PAGE_H - header_h, PAGE_W, header_h, fill=True, stroke=False)
@@ -646,13 +797,15 @@ def create_title_page(c, title, grid_h, grid_w, n_colors, total_stitches,
     c.setFont(FONT, 10)
     c.drawCentredString(PAGE_W / 2, PAGE_H - 68, "Cross-stitch pattern PDF")
 
-    # === 2. CALCULATE BOTTOM SECTION HEIGHT ===
-    # Info box: 7 lines × 22pt + padding
+    # ----- 2. Предварительный расчёт размеров нижней секции -----
+    # Считаем физические размеры схемы на канве указанного каунта (aida).
     cm_w = round(grid_w / aida * 2.54, 1)
     cm_h = round(grid_h / aida * 2.54, 1)
+    # Добавляем 16 см запаса ткани (по 8 см с каждой стороны).
     canvas_w = round(cm_w + 16, 0)
     canvas_h = round(cm_h + 16, 0)
 
+    # Сводка параметров схемы (пары "Заголовок: значение").
     info_lines = [
         ("Размер:", f"{grid_w} × {grid_h} стежков | на канве {aida} ct: {cm_w} × {cm_h} см"),
         ("Канва:", f"Aida {aida} ct: {int(canvas_w)} × {int(canvas_h)} см (с запасом 8 см)"),
@@ -661,6 +814,7 @@ def create_title_page(c, title, grid_h, grid_w, n_colors, total_stitches,
         ("Сложность:", "Средняя" if n_colors > 20 else "Начинающий"),
         ("Тип стежка:", "Полный крест (2 нити)"),
     ]
+    # Что именно содержится в PDF — формирует блок "Включено".
     includes = [
         "Цветной превью (пиксельный рендер)",
         "Рендер стежков на канве с картой зон",
@@ -668,43 +822,49 @@ def create_title_page(c, title, grid_h, grid_w, n_colors, total_stitches,
         "Цветовая схема с символами",
     ]
 
-    info_box_h = len(info_lines) * 22 + 30  # lines + padding
-    includes_h = 20 + len(includes) * 16 + 10  # header + lines + gap
-    separator_h = 15
+    # Высоты блоков: сами рассчитываем, чтобы дальше понять, сколько места
+    # осталось под превью.
+    info_box_h = len(info_lines) * 22 + 30        # 6 строк по 22pt + внутренние поля
+    includes_h = 20 + len(includes) * 16 + 10     # заголовок + строки + отбивка
+    separator_h = 15                               # отступ между инфо-блоком и "Включено"
     bottom_section_h = info_box_h + separator_h + includes_h
-    footer_margin = 30
+    footer_margin = 30                             # нижний отступ под футер
 
-    # === 3. PREVIEW IMAGE (fills space between header and info) ===
-    img_top = PAGE_H - header_h - 15  # 15pt gap below header
-    img_bottom = footer_margin + bottom_section_h + 15  # 15pt gap above info
-    avail_h_for_img = img_top - img_bottom
-    avail_w_for_img = PAGE_W - 2 * MARGIN - 40
+    # ----- 3. Превью (растягиваем на всё доступное место над инфо-блоком) -----
+    img_top = PAGE_H - header_h - 15                 # верхняя граница превью (15pt под шапкой)
+    img_bottom = footer_margin + bottom_section_h + 15  # нижняя граница превью (15pt над инфо)
+    avail_h_for_img = img_top - img_bottom           # доступная высота
+    avail_w_for_img = PAGE_W - 2 * MARGIN - 40       # доступная ширина (с учётом полей)
 
+    # Рисуем, только если высоты хватает на осмысленную картинку.
     if preview_img and avail_h_for_img > 80:
+        # Сохраняем PIL-превью в байтовый буфер в формате PNG — reportlab
+        # умеет читать изображения через ImageReader напрямую из буфера.
         buf = io.BytesIO()
         preview_img.save(buf, format='PNG')
         buf.seek(0)
         from reportlab.lib.utils import ImageReader
         ir = ImageReader(buf)
 
+        # Подбираем размеры, сохраняя пропорции схемы.
         aspect = grid_w / grid_h
-        # Fit to available rectangle
         img_w_pts = min(avail_w_for_img, avail_h_for_img * aspect)
         img_h_pts = img_w_pts / aspect
         if img_h_pts > avail_h_for_img:
             img_h_pts = avail_h_for_img
             img_w_pts = img_h_pts * aspect
 
+        # Центрируем картинку по горизонтали и по вертикали внутри доступной области.
         x_img = (PAGE_W - img_w_pts) / 2
-        y_img = img_bottom + (avail_h_for_img - img_h_pts) / 2  # centered vertically
+        y_img = img_bottom + (avail_h_for_img - img_h_pts) / 2
 
-        # Border
+        # Золотистая рамка вокруг превью.
         c.setStrokeColor(colors.Color(0.6, 0.5, 0.3))
         c.setLineWidth(3)
         c.rect(x_img - 5, y_img - 5, img_w_pts + 10, img_h_pts + 10)
         c.drawImage(ir, x_img, y_img, img_w_pts, img_h_pts)
 
-    # === 4. INFO BOX (bottom section) ===
+    # ----- 4. Инфо-блок (серый прямоугольник с параметрами схемы) -----
     box_top = footer_margin + bottom_section_h
     box_y = box_top - info_box_h
     c.setFillColor(colors.Color(0.96, 0.96, 0.96))
@@ -712,6 +872,7 @@ def create_title_page(c, title, grid_h, grid_w, n_colors, total_stitches,
     c.setLineWidth(0.5)
     c.roundRect(MARGIN, box_y, PAGE_W - 2 * MARGIN, info_box_h, 4, fill=True, stroke=True)
 
+    # Выводим построчно пары (жирный заголовок + значение обычным шрифтом).
     y = box_y + info_box_h - 22
     for label, value in info_lines:
         c.setFont(FONT_BOLD, 9)
@@ -721,7 +882,7 @@ def create_title_page(c, title, grid_h, grid_w, n_colors, total_stitches,
         c.drawString(MARGIN + 100, y, value)
         y -= 22
 
-    # === 5. INCLUDED SECTION ===
+    # ----- 5. Блок "Включено" (перечень страниц PDF) -----
     y_inc = box_y - separator_h
     c.setFont(FONT_BOLD, 9)
     c.setFillColor(colors.Color(0.2, 0.2, 0.2))
@@ -731,14 +892,20 @@ def create_title_page(c, title, grid_h, grid_w, n_colors, total_stitches,
         c.setFont(FONT, 9)
         c.drawString(MARGIN + 20, y_inc, f"→ {item}")
 
-    # === 6. FOOTER ===
+    # ----- 6. Футер и завершение страницы -----
     draw_footer(c, PAGE_W, PAGE_H, brand, brand_note)
-    c.showPage()
+    c.showPage()  # завершает текущую страницу и начинает следующую
 
 
 def create_stitch_render_page(c, title, dmc_grid, color_symbols, stitch_counts,
                                brand, brand_note, cell_size_mm=4.0):
-    """Page 2: Stitch render on simulated Aida canvas, 30% lighter, with zone map."""
+    """Страница 2: имитация стежков на "канве" с картой зон страниц схемы.
+
+    Показывает, как будет выглядеть готовая работа: цвета немного осветляются
+    (на 30%), поверх них рисуются красные линии, делящие картинку на зоны,
+    соответствующие страницам символьной схемы.
+    """
+    # ----- Заголовок и пояснение -----
     c.setFont(FONT_BOLD, 11)
     c.setFillColor(colors.Color(0.2, 0.2, 0.2))
     c.drawString(MARGIN, PAGE_H - 40, "Имитация стежков на канве")
@@ -749,38 +916,45 @@ def create_stitch_render_page(c, title, dmc_grid, color_symbols, stitch_counts,
     grid_h = len(dmc_grid)
     grid_w = len(dmc_grid[0])
 
+    # ----- Подбор размера клетки так, чтобы весь рисунок влез в страницу -----
     avail_w = PAGE_W - 2 * MARGIN - 20
     avail_h = PAGE_H - 100
     cell = min(avail_w / grid_w, avail_h / grid_h)
     total_w = cell * grid_w
     total_h = cell * grid_h
+    # Координаты левого нижнего угла "канвы" — центрируем по горизонтали.
     x0 = (PAGE_W - total_w) / 2
     y0 = PAGE_H - 70 - total_h
 
-    # Draw canvas background
+    # ----- Фон в цвет канвы Aida (бежевый) -----
     c.setFillColor(colors.Color(0.95, 0.93, 0.88))
     c.rect(x0 - 5, y0 - 5, total_w + 10, total_h + 10, fill=True)
 
-    # Lighten factor: 30%
+    # Насколько осветляем цвета при рендере: 0..1.
+    # 0.30 = новое_значение = old + (1 - old) * 0.30 — стремимся к белому.
     LIGHTEN = 0.30
 
+    # ----- Отрисовка каждой клетки осветлённым цветом -----
     for r in range(grid_h):
         for col in range(grid_w):
             code = dmc_grid[r][col]
             rgb = get_color_rgb(code)
+            # Нормализуем 0..255 → 0..1 для reportlab.
             rc = rgb[0] / 255.0
             gc = rgb[1] / 255.0
             bc = rgb[2] / 255.0
-            # Lighten by 30%: blend toward white
+            # Осветляем смешиванием с белым.
             rc = rc + (1.0 - rc) * LIGHTEN
             gc = gc + (1.0 - gc) * LIGHTEN
             bc = bc + (1.0 - bc) * LIGHTEN
             c.setFillColor(colors.Color(min(rc, 1), min(gc, 1), min(bc, 1)))
+            # Координаты клетки: ось Y в PDF растёт снизу вверх,
+            # поэтому вычитаем строку из total_h.
             px = x0 + col * cell
             py = y0 + total_h - (r + 1) * cell
             c.rect(px, py, cell, cell, fill=True, stroke=False)
 
-    # Calculate zone boundaries (same logic as scheme pages)
+    # ----- Расчёт границ зон (должен точь-в-точь совпадать с create_scheme_pages) -----
     scheme_cell = cell_size_mm * mm
     usable_w = PAGE_W - 2 * MARGIN - 20
     usable_h = PAGE_H - 80 - 20
@@ -789,21 +963,23 @@ def create_stitch_render_page(c, title, dmc_grid, color_symbols, stitch_counts,
     n_col_sections = math.ceil(grid_w / cols_per_page)
     n_row_sections = math.ceil(grid_h / rows_per_page)
 
-    # Draw zone grid lines
-    c.setStrokeColor(colors.Color(0.8, 0.2, 0.2, 0.7))
+    # ----- Красные разделительные линии между зонами -----
+    c.setStrokeColor(colors.Color(0.8, 0.2, 0.2, 0.7))  # полупрозрачный красный
     c.setLineWidth(1.2)
+    # Вертикальные линии — между столбцами зон.
     for cs in range(1, n_col_sections):
         col_boundary = cs * cols_per_page
         if col_boundary < grid_w:
             px = x0 + col_boundary * cell
             c.line(px, y0, px, y0 + total_h)
+    # Горизонтальные линии — между строками зон.
     for rs in range(1, n_row_sections):
         row_boundary = rs * rows_per_page
         if row_boundary < grid_h:
             py = y0 + total_h - row_boundary * cell
             c.line(x0, py, x0 + total_w, py)
 
-    # Draw zone numbers
+    # ----- Номера зон в центре каждой зоны (белый кружок + красное число) -----
     page_num = 0
     for row_sec in range(n_row_sections):
         for col_sec in range(n_col_sections):
@@ -813,19 +989,22 @@ def create_stitch_render_page(c, title, dmc_grid, color_symbols, stitch_counts,
             r_end = min(r_start + rows_per_page, grid_h)
             c_end = min(c_start + cols_per_page, grid_w)
 
+            # Центр зоны в координатах страницы.
             cx = x0 + (c_start + c_end) / 2 * cell
             cy = y0 + total_h - (r_start + r_end) / 2 * cell
 
-            # Semi-transparent white circle behind number
+            # saveState/restoreState — изолируем изменения цвета/шрифта.
             c.saveState()
+            # Полупрозрачный белый кружок-подложка под номером.
             c.setFillColor(colors.Color(1, 1, 1, 0.7))
             c.circle(cx, cy, 8, fill=True, stroke=False)
+            # Красная жирная цифра — номер страницы схемы.
             c.setFillColor(colors.Color(0.7, 0.1, 0.1))
             c.setFont(FONT_BOLD, 7)
             c.drawCentredString(cx, cy - 2.5, str(page_num))
             c.restoreState()
 
-    # Outer border
+    # ----- Внешняя золотистая рамка -----
     c.setStrokeColor(colors.Color(0.6, 0.5, 0.3))
     c.setLineWidth(2)
     c.rect(x0 - 3, y0 - 3, total_w + 6, total_h + 6, fill=False)
