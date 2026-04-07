@@ -41,6 +41,7 @@ Supports Cyrillic text via DejaVu Sans.
 # 0. ИМПОРТЫ
 # -----------------------------------------------------------------------------
 import argparse, math, os, sys, io
+from pathlib import Path
 from collections import Counter  # удобный счётчик повторений (для подсчёта стежков)
 import numpy as np                # быстрые операции над массивами пикселей
 from PIL import Image             # загрузка и обработка растровых изображений
@@ -73,14 +74,67 @@ from reportlab.pdfbase.ttfonts import TTFont    # поддержка TTF-шри�
 # Если его нет (например, запуск на Windows без установленного DejaVu) —
 # откатываемся на Helvetica. В этом случае кириллица может отображаться
 # некорректно, но PDF всё равно соберётся.
-FONT = 'DejaVuSans'
-FONT_BOLD = 'DejaVuSans-Bold'
-try:
-    pdfmetrics.registerFont(TTFont(FONT, '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
-    pdfmetrics.registerFont(TTFont(FONT_BOLD, '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'))
-except:
-    FONT = 'Helvetica'
-    FONT_BOLD = 'Helvetica-Bold'
+def _font_candidates(*relative_paths: str) -> list[Path]:
+    roots: list[Path] = []
+    windir = os.environ.get("WINDIR")
+    if windir:
+        roots.append(Path(windir) / "Fonts")
+    roots.extend(
+        [
+            Path("/usr/share/fonts"),
+            Path("/usr/local/share/fonts"),
+            Path.home() / ".fonts",
+            Path.home() / ".local" / "share" / "fonts",
+            Path("/Library/Fonts"),
+            Path("/System/Library/Fonts"),
+        ]
+    )
+
+    candidates: list[Path] = []
+    seen: set[Path] = set()
+    for relative_path in relative_paths:
+        rel = Path(relative_path)
+        for root in roots:
+            candidate = root / rel
+            if candidate not in seen:
+                seen.add(candidate)
+                candidates.append(candidate)
+    return candidates
+
+
+def _first_existing_font(*relative_paths: str) -> Path | None:
+    for candidate in _font_candidates(*relative_paths):
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _register_pdf_fonts() -> tuple[str, str]:
+    regular_path = _first_existing_font(
+        "dejavu/DejaVuSans.ttf",
+        "DejaVuSans.ttf",
+        "ttf/DejaVuSans.ttf",
+        "arial.ttf",
+    )
+    bold_path = _first_existing_font(
+        "dejavu/DejaVuSans-Bold.ttf",
+        "DejaVuSans-Bold.ttf",
+        "ttf/DejaVuSans-Bold.ttf",
+        "arialbd.ttf",
+    )
+
+    if regular_path and bold_path:
+        try:
+            pdfmetrics.registerFont(TTFont("AppUnicode", str(regular_path)))
+            pdfmetrics.registerFont(TTFont("AppUnicode-Bold", str(bold_path)))
+            return "AppUnicode", "AppUnicode-Bold"
+        except Exception:
+            pass
+
+    return "Helvetica", "Helvetica-Bold"
+
+
+FONT, FONT_BOLD = _register_pdf_fonts()
 
 # -----------------------------------------------------------------------------
 # 3. КОНСТАНТЫ СТРАНИЦЫ

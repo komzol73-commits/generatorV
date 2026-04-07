@@ -37,9 +37,89 @@ from reportlab.platypus import (
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 SCRIPT_DIR = Path(__file__).parent
 PALETTES_DIR = SCRIPT_DIR / "palettes"
+
+
+def _font_candidates(*relative_paths: str) -> list[Path]:
+    roots: list[Path] = []
+    windir = os.environ.get("WINDIR")
+    if windir:
+        roots.append(Path(windir) / "Fonts")
+    roots.extend(
+        [
+            Path("/usr/share/fonts"),
+            Path("/usr/local/share/fonts"),
+            Path.home() / ".fonts",
+            Path.home() / ".local" / "share" / "fonts",
+            Path("/Library/Fonts"),
+            Path("/System/Library/Fonts"),
+        ]
+    )
+
+    candidates: list[Path] = []
+    seen: set[Path] = set()
+    for relative_path in relative_paths:
+        rel = Path(relative_path)
+        for root in roots:
+            candidate = root / rel
+            if candidate not in seen:
+                seen.add(candidate)
+                candidates.append(candidate)
+    return candidates
+
+
+def _first_existing_font(*relative_paths: str) -> Path | None:
+    for candidate in _font_candidates(*relative_paths):
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _load_pil_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    font_path = _first_existing_font(
+        "dejavu/DejaVuSansMono-Bold.ttf" if bold else "dejavu/DejaVuSansMono.ttf",
+        "DejaVuSansMono-Bold.ttf" if bold else "DejaVuSansMono.ttf",
+        "ttf/DejaVuSansMono-Bold.ttf" if bold else "ttf/DejaVuSansMono.ttf",
+        "consolab.ttf" if bold else "consola.ttf",
+    )
+    if font_path:
+        try:
+            return ImageFont.truetype(str(font_path), size)
+        except (IOError, OSError):
+            pass
+    return ImageFont.load_default()
+
+
+def _register_pdf_fonts() -> tuple[str, str]:
+    regular_path = _first_existing_font(
+        "dejavu/DejaVuSans.ttf",
+        "DejaVuSans.ttf",
+        "ttf/DejaVuSans.ttf",
+        "arial.ttf",
+    )
+    bold_path = _first_existing_font(
+        "dejavu/DejaVuSans-Bold.ttf",
+        "DejaVuSans-Bold.ttf",
+        "ttf/DejaVuSans-Bold.ttf",
+        "arialbd.ttf",
+    )
+
+    if regular_path and bold_path:
+        try:
+            pdfmetrics.registerFont(TTFont("PixelUnicode", str(regular_path)))
+            pdfmetrics.registerFont(TTFont("PixelUnicode-Bold", str(bold_path)))
+            return "PixelUnicode", "PixelUnicode-Bold"
+        except Exception:
+            pass
+
+    return "Helvetica", "Helvetica-Bold"
+
+
+PDF_FONT, PDF_FONT_BOLD = _register_pdf_fonts()
 
 
 def load_palette(name: str) -> list[dict]:
@@ -280,20 +360,8 @@ def generate_mono_grid_png(binary_grid, thread_color_rgb, output_path, cell_size
     
     sym_font_size = max(10, cell_size - 6)
     label_font_size = max(8, cell_size - 12)
-    try:
-        font_bold = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", sym_font_size)
-    except (IOError, OSError):
-        try:
-            font_bold = ImageFont.truetype(
-                "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", sym_font_size)
-        except (IOError, OSError):
-            font_bold = ImageFont.load_default()
-    try:
-        font_label = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", label_font_size)
-    except (IOError, OSError):
-        font_label = font_bold
+    font_bold = _load_pil_font(sym_font_size, bold=True)
+    font_label = _load_pil_font(label_font_size, bold=False)
     
     tr, tg, tb = thread_color_rgb
     # Light tint for filled cells
@@ -388,13 +456,13 @@ def generate_mono_pdf(
     
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
-        "T", parent=styles["Title"], fontSize=18, spaceAfter=6*mm, alignment=TA_CENTER)
+        "T", parent=styles["Title"], fontName=PDF_FONT_BOLD, fontSize=18, spaceAfter=6*mm, alignment=TA_CENTER)
     heading_style = ParagraphStyle(
-        "H", parent=styles["Heading2"], fontSize=13, spaceAfter=4*mm, spaceBefore=6*mm)
+        "H", parent=styles["Heading2"], fontName=PDF_FONT_BOLD, fontSize=13, spaceAfter=4*mm, spaceBefore=6*mm)
     body_style = ParagraphStyle(
-        "B", parent=styles["Normal"], fontSize=9, spaceAfter=2*mm)
+        "B", parent=styles["Normal"], fontName=PDF_FONT, fontSize=9, spaceAfter=2*mm)
     small_style = ParagraphStyle(
-        "S", parent=styles["Normal"], fontSize=7, leading=9)
+        "S", parent=styles["Normal"], fontName=PDF_FONT, fontSize=7, leading=9)
     
     elements = []
     
