@@ -13,6 +13,12 @@ from PIL import Image, ImageDraw
 from sklearn.cluster import KMeans
 
 from .data import ALL_SYMBOLS, DMC_COLORS
+from .render_settings import (
+    PREVIEW_BRIGHTNESS,
+    PREVIEW_CONTRAST,
+    PREVIEW_SATURATION,
+    adjust_rgb8,
+)
 
 def find_nearest_dmc(rgb, palette):
     """Находит код DMC-цвета, ближайшего к переданному RGB.
@@ -43,7 +49,13 @@ def find_nearest_dmc(rgb, palette):
             best = code
     return best
 
-def render_stitch_preview(dmc_grid, cell_px=8):
+def render_stitch_preview(
+    dmc_grid,
+    cell_px=8,
+    brightness=PREVIEW_BRIGHTNESS,
+    contrast=PREVIEW_CONTRAST,
+    saturation=PREVIEW_SATURATION,
+):
     """Собирает preview-картинку с имитацией стежков по DMC-сетке."""
     grid_h = len(dmc_grid)
     grid_w = len(dmc_grid[0]) if grid_h else 0
@@ -60,7 +72,12 @@ def render_stitch_preview(dmc_grid, cell_px=8):
 
     for y, row in enumerate(dmc_grid):
         for x, code in enumerate(row):
-            rgb = get_color_rgb(code)
+            rgb = adjust_rgb8(
+                get_color_rgb(code),
+                brightness=brightness,
+                contrast=contrast,
+                saturation=saturation,
+            )
             x0 = x * cell_px
             y0 = y * cell_px
             x1 = x0 + cell_px - 1
@@ -173,7 +190,13 @@ def image_to_pattern(image_path, target_width, max_colors):
     else:
         preview_cell_px = 6
 
-    preview_img = render_stitch_preview(dmc_grid, cell_px=preview_cell_px)
+    preview_img = render_stitch_preview(
+        dmc_grid,
+        cell_px=preview_cell_px,
+        brightness=PREVIEW_BRIGHTNESS,
+        contrast=PREVIEW_CONTRAST,
+        saturation=PREVIEW_SATURATION,
+    )
     return dmc_grid, stitch_counts, color_symbols, target_height, target_width, preview_img
 
 def detect_blends(dmc_grid, stitch_counts, color_symbols):

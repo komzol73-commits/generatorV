@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import threading
 import tkinter as tk
@@ -50,8 +51,10 @@ class CrossStitchApp:
         self._result_preview = None
         self._build_thread: threading.Thread | None = None
         self._process: subprocess.Popen[str] | None = None
+        self._state_path = Path(__file__).resolve().parent.parent / ".gui_state.json"
 
         self._build_ui()
+        self._restore_state()
         self.width.trace_add('write', self._refresh_dimension_summary)
         self.aida.trace_add('write', self._refresh_dimension_summary)
         self._refresh_dimension_summary()
@@ -147,11 +150,13 @@ class CrossStitchApp:
         if not self.output_name.get().strip() or self.output_name.get() == 'pattern_test':
             self.output_name.set(selected_path.stem)
         self._load_preview(selected_path, target='source')
+        self._save_state()
 
     def _choose_output_dir(self) -> None:
         selected = filedialog.askdirectory(title="Папка для результатов", initialdir=self.output_dir.get())
         if selected:
             self.output_dir.set(selected)
+            self._save_state()
 
     def _load_preview(self, path: Path, target: str) -> None:
         tk_image = load_preview_image(path)
@@ -174,6 +179,45 @@ class CrossStitchApp:
         size_text, fabric_text = compute_dimension_summary(self.width.get(), self.aida.get())
         self.size_summary.set(size_text)
         self.fabric_summary.set(fabric_text)
+
+    def _restore_state(self) -> None:
+        """Восстанавливает последнее выбранное изображение и папку вывода."""
+        if not self._state_path.exists():
+            return
+        try:
+            state = json.loads(self._state_path.read_text(encoding='utf-8'))
+        except (OSError, json.JSONDecodeError):
+            return
+
+        image_path = str(state.get("last_image_path", "")).strip()
+        output_dir = str(state.get("last_output_dir", "")).strip()
+
+        if output_dir:
+            self.output_dir.set(output_dir)
+
+        if image_path:
+            path = Path(image_path)
+            if path.exists():
+                self.image_path.set(str(path))
+                self._load_preview(path, target='source')
+                if not self.title.get().strip():
+                    self.title.set(path.stem)
+                if not self.output_name.get().strip() or self.output_name.get() == 'pattern_test':
+                    self.output_name.set(path.stem)
+
+    def _save_state(self) -> None:
+        """Сохраняет минимальное состояние GUI между запусками."""
+        state = {
+            "last_image_path": self.image_path.get().strip(),
+            "last_output_dir": self.output_dir.get().strip(),
+        }
+        try:
+            self._state_path.write_text(
+                json.dumps(state, ensure_ascii=False, indent=2),
+                encoding='utf-8',
+            )
+        except OSError:
+            pass
 
     def _validate(self):
         if not self.image_path.get().strip():

@@ -16,6 +16,16 @@ from .data import DMC_COLORS, DMC_TO_GAMMA
 from .fonts import FONT, FONT_BOLD
 from .layout import MARGIN, PAGE_H, PAGE_W
 from .pattern_core import get_color_rgb
+from .render_settings import (
+    LEGEND_BRIGHTNESS,
+    LEGEND_CONTRAST,
+    LEGEND_SATURATION,
+    STITCH_RENDER_BRIGHTNESS,
+    STITCH_RENDER_CONTRAST,
+    STITCH_RENDER_LIGHTEN,
+    STITCH_RENDER_SATURATION,
+    adjust_rgb01,
+)
 
 def draw_footer(c, page_w, page_h, brand, brand_note, margin=MARGIN):
     """Рисует нижний колонтитул (бренд + копирайт) на текущей странице PDF."""
@@ -177,7 +187,7 @@ def create_stitch_render_page(c, title, dmc_grid, color_symbols, stitch_counts,
 
     # Насколько осветляем цвета при рендере: 0..1.
     # 0.30 = новое_значение = old + (1 - old) * 0.30 — стремимся к белому.
-    LIGHTEN = 0.30
+    LIGHTEN = STITCH_RENDER_LIGHTEN
 
     # ----- Отрисовка каждой клетки осветлённым цветом -----
     for r in range(grid_h):
@@ -185,9 +195,12 @@ def create_stitch_render_page(c, title, dmc_grid, color_symbols, stitch_counts,
             code = dmc_grid[r][col]
             rgb = get_color_rgb(code)
             # Нормализуем 0..255 → 0..1 для reportlab.
-            rc = rgb[0] / 255.0
-            gc = rgb[1] / 255.0
-            bc = rgb[2] / 255.0
+            rc, gc, bc = adjust_rgb01(
+                (rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0),
+                brightness=STITCH_RENDER_BRIGHTNESS,
+                contrast=STITCH_RENDER_CONTRAST,
+                saturation=STITCH_RENDER_SATURATION,
+            )
             # Осветляем смешиванием с белым.
             rc = rc + (1.0 - rc) * LIGHTEN
             gc = gc + (1.0 - gc) * LIGHTEN
@@ -305,8 +318,18 @@ def create_legend_page(c, title, stitch_counts, color_symbols, aida,
             _, rgb1 = DMC_COLORS.get(c1, ("?", (128,128,128)))
             _, rgb2 = DMC_COLORS.get(c2, ("?", (128,128,128)))
             # Two half-swatches
-            r1,g1,b1 = [v/255 for v in rgb1]
-            r2,g2,b2 = [v/255 for v in rgb2]
+            r1, g1, b1 = adjust_rgb01(
+                tuple(v / 255 for v in rgb1),
+                brightness=LEGEND_BRIGHTNESS,
+                contrast=LEGEND_CONTRAST,
+                saturation=LEGEND_SATURATION,
+            )
+            r2, g2, b2 = adjust_rgb01(
+                tuple(v / 255 for v in rgb2),
+                brightness=LEGEND_BRIGHTNESS,
+                contrast=LEGEND_CONTRAST,
+                saturation=LEGEND_SATURATION,
+            )
             c.setFillColor(colors.Color(r1,g1,b1))
             c.rect(col_x[0], y-2, 6, 12, fill=True, stroke=False)
             c.setFillColor(colors.Color(r2,g2,b2))
@@ -335,7 +358,12 @@ def create_legend_page(c, title, stitch_counts, color_symbols, aida,
             gamma_code = DMC_TO_GAMMA.get(code, "—")
 
             # Color swatch
-            rc, gc, bc = rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0
+            rc, gc, bc = adjust_rgb01(
+                (rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0),
+                brightness=LEGEND_BRIGHTNESS,
+                contrast=LEGEND_CONTRAST,
+                saturation=LEGEND_SATURATION,
+            )
             c.setFillColor(colors.Color(rc, gc, bc))
             c.rect(col_x[0], y - 2, 12, 12, fill=True)
             c.setStrokeColor(colors.Color(0.5, 0.5, 0.5))
