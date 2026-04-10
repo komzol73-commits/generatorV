@@ -13,6 +13,8 @@
   контраст первой картинки.
 - PREVIEW_SATURATION:
   насыщенность первой картинки.
+- PREVIEW_BORDER_WIDTH:
+  толщина бордера клеток первой картинки.
 - STITCH_RENDER_LIGHTEN:
   вторая картинка; это страница "Имитация стежков на канве".
 - STITCH_RENDER_BRIGHTNESS:
@@ -42,6 +44,7 @@
 - PREVIEW_BRIGHTNESS: 0.75 .. 1.25
 - PREVIEW_CONTRAST: 0.75 .. 1.35
 - PREVIEW_SATURATION: 0.60 .. 1.40
+- PREVIEW_BORDER_WIDTH: можно дробное число, но при рендере оно округляется до целого; практически 0.2 .. 3.0
 - STITCH_RENDER_BRIGHTNESS: 0.75 .. 1.25
 - STITCH_RENDER_CONTRAST: 0.75 .. 1.35
 - STITCH_RENDER_SATURATION: 0.60 .. 1.40
@@ -54,9 +57,10 @@
 from __future__ import annotations
 
 # Первая визуализация: stitch-preview на титульной странице и в *_preview.png.
-PREVIEW_BRIGHTNESS = 0.70
-PREVIEW_CONTRAST = 1.00
-PREVIEW_SATURATION = 1.30
+PREVIEW_BRIGHTNESS = 1.08
+PREVIEW_CONTRAST = 0.92
+PREVIEW_SATURATION = 1.12
+PREVIEW_BORDER_WIDTH = 0
 
 # Вторая визуализация: страница "Имитация стежков на канве".
 STITCH_RENDER_BRIGHTNESS = 1.00

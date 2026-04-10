@@ -280,7 +280,6 @@ class CrossStitchApp:
             if preview_path.exists():
                 self.root.after(0, lambda p=preview_path: self._load_preview(p, target='result'))
             self.root.after(0, self._append_log, f"Сохранено: {output_pdf}")
-            self.root.after(0, messagebox.showinfo, "Готово", f"PDF сохранен:\n{output_pdf}")
         except Exception as exc:
             self.root.after(0, self._append_log, str(exc))
             self.root.after(0, messagebox.showerror, "Ошибка", str(exc))

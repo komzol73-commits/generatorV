@@ -15,6 +15,7 @@ from sklearn.cluster import KMeans
 from .data import ALL_SYMBOLS, DMC_COLORS
 from .render_settings import (
     PREVIEW_BRIGHTNESS,
+    PREVIEW_BORDER_WIDTH,
     PREVIEW_CONTRAST,
     PREVIEW_SATURATION,
     adjust_rgb8,
@@ -68,6 +69,7 @@ def render_stitch_preview(
 
     inner_pad = max(1, cell_px // 6)
     shade_offset = max(1, cell_px // 7)
+    border_width = max(1, int(round(PREVIEW_BORDER_WIDTH)))
     grid_color = (221, 212, 193)
 
     for y, row in enumerate(dmc_grid):
@@ -108,9 +110,9 @@ def render_stitch_preview(
 
     # Лёгкая сетка помогает превью выглядеть как канва, а не как сглаженная мозаика.
     for x in range(0, grid_w * cell_px, cell_px):
-        draw.line((x, 0, x, grid_h * cell_px), fill=grid_color, width=1)
+        draw.line((x, 0, x, grid_h * cell_px), fill=grid_color, width=border_width)
     for y in range(0, grid_h * cell_px, cell_px):
-        draw.line((0, y, grid_w * cell_px, y), fill=grid_color, width=1)
+        draw.line((0, y, grid_w * cell_px, y), fill=grid_color, width=border_width)
 
     return preview
 
