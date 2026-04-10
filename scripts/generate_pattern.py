@@ -44,7 +44,7 @@ import argparse, math, os, sys, io
 from pathlib import Path
 from collections import Counter  # удобный счётчик повторений (для подсчёта стежков)
 import numpy as np                # быстрые операции над массивами пикселей
-from PIL import Image             # загрузка и обработка растровых изображений
+from PIL import Image, ImageDraw  # загрузка и обработка растровых изображений
 from sklearn.cluster import KMeans  # кластеризация цветов (квантование палитры)
 
 # Загружаем таблицу соответствия DMC <-> Гамма (российский аналог ниток).
@@ -627,6 +627,61 @@ def find_nearest_dmc(rgb, palette):
     return best
 
 
+def render_stitch_preview(dmc_grid, cell_px=8):
+    """Собирает preview-картинку с имитацией стежков по DMC-сетке."""
+    grid_h = len(dmc_grid)
+    grid_w = len(dmc_grid[0]) if grid_h else 0
+    if grid_h == 0 or grid_w == 0:
+        return Image.new("RGB", (1, 1), (240, 232, 214))
+
+    canvas_color = (240, 232, 214)
+    preview = Image.new("RGB", (grid_w * cell_px, grid_h * cell_px), canvas_color)
+    draw = ImageDraw.Draw(preview)
+
+    inner_pad = max(1, cell_px // 6)
+    shade_offset = max(1, cell_px // 7)
+    grid_color = (221, 212, 193)
+
+    for y, row in enumerate(dmc_grid):
+        for x, code in enumerate(row):
+            rgb = get_color_rgb(code)
+            x0 = x * cell_px
+            y0 = y * cell_px
+            x1 = x0 + cell_px - 1
+            y1 = y0 + cell_px - 1
+
+            draw.rectangle((x0, y0, x1, y1), fill=canvas_color)
+
+            # Мягкая подложка, чтобы цвет читался как нить на ткани, а не как сплошной пиксель.
+            fill_rgb = tuple(int(channel * 0.72 + base * 0.28) for channel, base in zip(rgb, canvas_color))
+            draw.rectangle(
+                (x0 + inner_pad, y0 + inner_pad, x1 - inner_pad, y1 - inner_pad),
+                fill=fill_rgb,
+            )
+
+            # Две диагонали создают читаемую имитацию крестика.
+            shadow_rgb = tuple(max(0, c - 34) for c in rgb)
+            highlight_rgb = tuple(min(255, int(c * 0.85 + 38)) for c in rgb)
+            draw.line(
+                (x0 + inner_pad, y0 + inner_pad + shade_offset, x1 - inner_pad, y1 - inner_pad + shade_offset),
+                fill=shadow_rgb,
+                width=max(1, cell_px // 3),
+            )
+            draw.line(
+                (x0 + inner_pad, y1 - inner_pad, x1 - inner_pad, y0 + inner_pad),
+                fill=highlight_rgb,
+                width=max(1, cell_px // 3),
+            )
+
+    # Лёгкая сетка помогает превью выглядеть как канва, а не как сглаженная мозаика.
+    for x in range(0, grid_w * cell_px, cell_px):
+        draw.line((x, 0, x, grid_h * cell_px), fill=grid_color, width=1)
+    for y in range(0, grid_h * cell_px, cell_px):
+        draw.line((0, y, grid_w * cell_px, y), fill=grid_color, width=1)
+
+    return preview
+
+
 # =============================================================================
 # 7. КОНВЕРТАЦИЯ ИЗОБРАЖЕНИЯ В СЕТКУ КРЕСТИКОВ
 # =============================================================================
@@ -699,7 +754,15 @@ def image_to_pattern(image_path, target_width, max_colors):
     for i, code in enumerate(sorted_colors):
         color_symbols[code] = ALL_SYMBOLS[i] if i < len(ALL_SYMBOLS) else chr(9312 + i)
 
-    return dmc_grid, stitch_counts, color_symbols, target_height, target_width, img_resized
+    if target_width <= 120:
+        preview_cell_px = 10
+    elif target_width <= 180:
+        preview_cell_px = 8
+    else:
+        preview_cell_px = 6
+
+    preview_img = render_stitch_preview(dmc_grid, cell_px=preview_cell_px)
+    return dmc_grid, stitch_counts, color_symbols, target_height, target_width, preview_img
 
 
 # =============================================================================
