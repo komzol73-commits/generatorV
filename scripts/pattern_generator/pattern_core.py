@@ -74,7 +74,7 @@ def render_stitch_preview(
 
     render_scale = 2
     cell_px_hr = cell_px * render_scale
-    canvas_color = (233, 225, 206)
+    canvas_color = (196, 192, 188)
     preview = Image.new("RGB", (grid_w * cell_px_hr, grid_h * cell_px_hr), canvas_color)
     draw = ImageDraw.Draw(preview)
 
