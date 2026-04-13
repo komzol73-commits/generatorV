@@ -17,7 +17,16 @@ from .render_settings import (
     PREVIEW_BRIGHTNESS,
     PREVIEW_BORDER_WIDTH,
     PREVIEW_CONTRAST,
+    PREVIEW_GRID_BRIGHTNESS,
+    PREVIEW_GRID_CONTRAST,
+    PREVIEW_GRID_SATURATION,
     PREVIEW_SATURATION,
+    PREVIEW_STITCH_FILL_MIX,
+    PREVIEW_STITCH_HIGHLIGHT_STRENGTH,
+    PREVIEW_STITCH_HIGHLIGHT_LENGTH,
+    PREVIEW_STITCH_INNER_PAD,
+    PREVIEW_STITCH_SHADOW_STRENGTH,
+    PREVIEW_STITCH_WIDTH_SCALE,
     adjust_rgb8,
 )
 
@@ -63,14 +72,24 @@ def render_stitch_preview(
     if grid_h == 0 or grid_w == 0:
         return Image.new("RGB", (1, 1), (240, 232, 214))
 
-    canvas_color = (240, 232, 214)
-    preview = Image.new("RGB", (grid_w * cell_px, grid_h * cell_px), canvas_color)
+    render_scale = 2
+    cell_px_hr = cell_px * render_scale
+    canvas_color = (233, 225, 206)
+    preview = Image.new("RGB", (grid_w * cell_px_hr, grid_h * cell_px_hr), canvas_color)
     draw = ImageDraw.Draw(preview)
 
-    inner_pad = max(1, cell_px // 6)
-    shade_offset = max(1, cell_px // 7)
-    border_width = max(1, int(round(PREVIEW_BORDER_WIDTH)))
-    grid_color = (221, 212, 193)
+    inner_pad = max(1, int(round(PREVIEW_STITCH_INNER_PAD * render_scale)))
+    shade_offset = max(0, cell_px_hr // 14)
+    border_width = max(0, int(round(PREVIEW_BORDER_WIDTH * render_scale)))
+    stitch_width = max(1, int(round(cell_px_hr * PREVIEW_STITCH_WIDTH_SCALE)))
+    stitch_core_width = max(1, stitch_width - 3)
+    highlight_length = max(2, int(round(cell_px_hr * PREVIEW_STITCH_HIGHLIGHT_LENGTH)))
+    grid_color = adjust_rgb8(
+        (221, 212, 193),
+        brightness=PREVIEW_GRID_BRIGHTNESS,
+        contrast=PREVIEW_GRID_CONTRAST,
+        saturation=PREVIEW_GRID_SATURATION,
+    )
 
     for y, row in enumerate(dmc_grid):
         for x, code in enumerate(row):
@@ -80,41 +99,62 @@ def render_stitch_preview(
                 contrast=contrast,
                 saturation=saturation,
             )
-            x0 = x * cell_px
-            y0 = y * cell_px
-            x1 = x0 + cell_px - 1
-            y1 = y0 + cell_px - 1
+            x0 = x * cell_px_hr
+            y0 = y * cell_px_hr
+            x1 = x0 + cell_px_hr - 1
+            y1 = y0 + cell_px_hr - 1
 
             draw.rectangle((x0, y0, x1, y1), fill=canvas_color)
 
-            # Мягкая подложка, чтобы цвет читался как нить на ткани, а не как сплошной пиксель.
-            fill_rgb = tuple(int(channel * 0.72 + base * 0.28) for channel, base in zip(rgb, canvas_color))
-            draw.rectangle(
-                (x0 + inner_pad, y0 + inner_pad, x1 - inner_pad, y1 - inner_pad),
-                fill=fill_rgb,
+            fill_rgb = tuple(
+                int(channel * (1.0 - PREVIEW_STITCH_FILL_MIX) + base * PREVIEW_STITCH_FILL_MIX)
+                for channel, base in zip(rgb, canvas_color)
             )
 
-            # Две диагонали создают читаемую имитацию крестика.
-            shadow_rgb = tuple(max(0, c - 34) for c in rgb)
-            highlight_rgb = tuple(min(255, int(c * 0.85 + 38)) for c in rgb)
+            # Тело крестика строится самими диагоналями, без квадратной подложки.
+            shadow_rgb = tuple(max(0, c - PREVIEW_STITCH_SHADOW_STRENGTH) for c in fill_rgb)
+            highlight_rgb = tuple(
+                min(255, c + PREVIEW_STITCH_HIGHLIGHT_STRENGTH) for c in fill_rgb
+            )
             draw.line(
                 (x0 + inner_pad, y0 + inner_pad + shade_offset, x1 - inner_pad, y1 - inner_pad + shade_offset),
                 fill=shadow_rgb,
-                width=max(1, cell_px // 3),
+                width=stitch_width,
+            )
+            draw.line(
+                (x0 + inner_pad, y0 + inner_pad + shade_offset, x1 - inner_pad, y1 - inner_pad + shade_offset),
+                fill=fill_rgb,
+                width=stitch_core_width,
             )
             draw.line(
                 (x0 + inner_pad, y1 - inner_pad, x1 - inner_pad, y0 + inner_pad),
+                fill=fill_rgb,
+                width=stitch_width,
+            )
+            draw.line(
+                (x0 + inner_pad, y1 - inner_pad, x1 - inner_pad, y0 + inner_pad),
+                fill=fill_rgb,
+                width=stitch_core_width,
+            )
+            # Локальный блик только в верхне-левой части, а не по всей диагонали.
+            highlight_x0 = x0 + inner_pad + render_scale
+            highlight_y0 = y0 + inner_pad + render_scale
+            highlight_x1 = min(x1 - inner_pad, highlight_x0 + highlight_length)
+            highlight_y1 = min(y1 - inner_pad, highlight_y0 + highlight_length)
+            draw.line(
+                (highlight_x0, highlight_y0, highlight_x1, highlight_y1),
                 fill=highlight_rgb,
-                width=max(1, cell_px // 3),
+                width=max(1, stitch_core_width - 2),
             )
 
     # Лёгкая сетка помогает превью выглядеть как канва, а не как сглаженная мозаика.
-    for x in range(0, grid_w * cell_px, cell_px):
-        draw.line((x, 0, x, grid_h * cell_px), fill=grid_color, width=border_width)
-    for y in range(0, grid_h * cell_px, cell_px):
-        draw.line((0, y, grid_w * cell_px, y), fill=grid_color, width=border_width)
+    if border_width > 0:
+        for x in range(0, grid_w * cell_px_hr, cell_px_hr):
+            draw.line((x, 0, x, grid_h * cell_px_hr), fill=grid_color, width=border_width)
+        for y in range(0, grid_h * cell_px_hr, cell_px_hr):
+            draw.line((0, y, grid_w * cell_px_hr, y), fill=grid_color, width=border_width)
 
-    return preview
+    return preview.resize((grid_w * cell_px, grid_h * cell_px), Image.LANCZOS)
 
 def image_to_pattern(image_path, target_width, max_colors):
     """Конвертирует изображение в двумерный "грид" схемы вышивки.

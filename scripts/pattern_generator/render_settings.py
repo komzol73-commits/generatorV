@@ -15,6 +15,24 @@
   насыщенность первой картинки.
 - PREVIEW_BORDER_WIDTH:
   толщина бордера клеток первой картинки.
+- PREVIEW_GRID_BRIGHTNESS:
+  яркость сетки первой картинки.
+- PREVIEW_GRID_CONTRAST:
+  контраст сетки первой картинки.
+- PREVIEW_GRID_SATURATION:
+  насыщенность сетки первой картинки.
+- PREVIEW_STITCH_WIDTH_SCALE:
+  толщина диагоналей крестика на первой картинке.
+- PREVIEW_STITCH_FILL_MIX:
+  насколько цвет нити смешивается с цветом канвы; меньше = мягче и тканевее.
+- PREVIEW_STITCH_SHADOW_STRENGTH:
+  глубина затемнения нижней диагонали крестика.
+- PREVIEW_STITCH_HIGHLIGHT_STRENGTH:
+  сила высветления верхней диагонали крестика.
+- PREVIEW_STITCH_INNER_PAD:
+  отступ крестика от краев клетки; меньше = крестик плотнее.
+- PREVIEW_STITCH_HIGHLIGHT_LENGTH:
+  длина локального блика в верхне-левой части крестика; доля от размера клетки.
 - STITCH_RENDER_LIGHTEN:
   вторая картинка; это страница "Имитация стежков на канве".
 - STITCH_RENDER_BRIGHTNESS:
@@ -45,6 +63,15 @@
 - PREVIEW_CONTRAST: 0.75 .. 1.35
 - PREVIEW_SATURATION: 0.60 .. 1.40
 - PREVIEW_BORDER_WIDTH: можно дробное число, но при рендере оно округляется до целого; практически 0.2 .. 3.0
+- PREVIEW_GRID_BRIGHTNESS: 0.75 .. 1.25
+- PREVIEW_GRID_CONTRAST: 0.75 .. 1.25
+- PREVIEW_GRID_SATURATION: 0.50 .. 1.30
+- PREVIEW_STITCH_WIDTH_SCALE: 0.30 .. 0.70
+- PREVIEW_STITCH_FILL_MIX: 0.10 .. 0.40
+- PREVIEW_STITCH_SHADOW_STRENGTH: 8 .. 40
+- PREVIEW_STITCH_HIGHLIGHT_STRENGTH: 8 .. 40
+- PREVIEW_STITCH_INNER_PAD: 1 .. 3
+- PREVIEW_STITCH_HIGHLIGHT_LENGTH: 0.20 .. 1.00
 - STITCH_RENDER_BRIGHTNESS: 0.75 .. 1.25
 - STITCH_RENDER_CONTRAST: 0.75 .. 1.35
 - STITCH_RENDER_SATURATION: 0.60 .. 1.40
@@ -57,16 +84,25 @@
 from __future__ import annotations
 
 # Первая визуализация: stitch-preview на титульной странице и в *_preview.png.
-PREVIEW_BRIGHTNESS = 1.08
-PREVIEW_CONTRAST = 0.92
-PREVIEW_SATURATION = 1.12
+PREVIEW_BRIGHTNESS = 1.12
+PREVIEW_CONTRAST = 0.98
+PREVIEW_SATURATION = 1.28
 PREVIEW_BORDER_WIDTH = 0
+PREVIEW_GRID_BRIGHTNESS = 1.12
+PREVIEW_GRID_CONTRAST = 0.72
+PREVIEW_GRID_SATURATION = 0.18
+PREVIEW_STITCH_WIDTH_SCALE = 0.56
+PREVIEW_STITCH_FILL_MIX = 0.22
+PREVIEW_STITCH_SHADOW_STRENGTH = 10
+PREVIEW_STITCH_HIGHLIGHT_STRENGTH = 21
+PREVIEW_STITCH_INNER_PAD = 1
+PREVIEW_STITCH_HIGHLIGHT_LENGTH = 0.34
 
 # Вторая визуализация: страница "Имитация стежков на канве".
-STITCH_RENDER_BRIGHTNESS = 1.00
-STITCH_RENDER_CONTRAST = 1.00
-STITCH_RENDER_SATURATION = 1.00
-STITCH_RENDER_LIGHTEN = 0.30
+STITCH_RENDER_BRIGHTNESS = 1.03
+STITCH_RENDER_CONTRAST = 1.10
+STITCH_RENDER_SATURATION = 1.12
+STITCH_RENDER_LIGHTEN = 0.12
 
 # Третья визуализация: цветовые плашки в легенде.
 LEGEND_BRIGHTNESS = 1.00
