@@ -9,9 +9,8 @@ from __future__ import annotations
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
-from .data import ALL_SYMBOLS
 from .exporters import export_oxs
-from .pattern_core import detect_blends, image_to_pattern
+from .pattern_core import build_symbol_priority, detect_blends, image_to_pattern
 from .pdf_pages import (
     create_legend_page,
     create_scheme_pages,
@@ -27,6 +26,7 @@ def generate_pattern(image_path, output_path, target_width=200, max_colors=38,
                      blend_replacements=None, region_replacements=None, no_blends=False):
     """Main function: generate complete cross-stitch PDF."""
     print(f"Loading image: {image_path}")
+    symbol_priority = build_symbol_priority()
     dmc_grid, stitch_counts, color_symbols, grid_h, grid_w, preview_img = \
         image_to_pattern(image_path, target_width, max_colors)
 
@@ -62,7 +62,7 @@ def generate_pattern(image_path, output_path, target_width=200, max_colors=38,
                 # Assign symbol if new code doesn't have one
                 if replacement_code not in color_symbols:
                     used = set(color_symbols.values())
-                    for s in ALL_SYMBOLS:
+                    for s in symbol_priority:
                         if s not in used:
                             color_symbols[replacement_code] = s
                             break
@@ -97,7 +97,7 @@ def generate_pattern(image_path, output_path, target_width=200, max_colors=38,
                     color_symbols.pop(old_code, None)
                 if new_code not in color_symbols:
                     used = set(color_symbols.values())
-                    for s in ALL_SYMBOLS:
+                    for s in symbol_priority:
                         if s not in used:
                             color_symbols[new_code] = s
                             break

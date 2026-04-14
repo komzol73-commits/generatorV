@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 from sklearn.cluster import KMeans
 
-from .data import ALL_SYMBOLS, DMC_COLORS
+from .data import ALL_SYMBOLS, DMC_COLORS, SIMILAR_SYMBOL_GROUPS, SYMBOL_FAMILIES
 from .render_settings import (
     PREVIEW_BRIGHTNESS,
     PREVIEW_BORDER_WIDTH,
@@ -29,6 +29,12 @@ from .render_settings import (
     PREVIEW_STITCH_WIDTH_SCALE,
     adjust_rgb8,
 )
+
+SYMBOL_TO_FAMILY = {
+    symbol: family_index
+    for family_index, family in enumerate(SYMBOL_FAMILIES)
+    for symbol in family
+}
 
 def find_nearest_dmc(rgb, palette):
     """Находит код DMC-цвета, ближайшего к переданному RGB.
@@ -58,6 +64,57 @@ def find_nearest_dmc(rgb, palette):
             min_dist = dist
             best = code
     return best
+
+def build_symbol_priority() -> list[str]:
+    """Чередует семейства символов, чтобы соседние по важности знаки были контрастнее."""
+    families = [family[:] for family in SYMBOL_FAMILIES]
+    ordered: list[str] = []
+    max_len = max((len(family) for family in families), default=0)
+
+    for index in range(max_len):
+        for family in families:
+            if index < len(family):
+                ordered.append(family[index])
+
+    # Добавляем все символы, которых не было в семействах, сохраняя их исходный порядок.
+    used = set(ordered)
+    for symbol in ALL_SYMBOLS:
+        if symbol not in used:
+            ordered.append(symbol)
+            used.add(symbol)
+
+    # Локально разводим похожие символы, если они случайно оказались рядом.
+    for index in range(1, len(ordered)):
+        if not symbols_too_similar(ordered[index - 1], ordered[index]):
+            continue
+        for swap_index in range(index + 1, len(ordered)):
+            candidate = ordered[swap_index]
+            prev_symbol = ordered[index - 1]
+            next_symbol = ordered[index + 1] if index + 1 < len(ordered) else None
+            if symbols_too_similar(prev_symbol, candidate):
+                continue
+            if symbol_family(prev_symbol) == symbol_family(candidate):
+                continue
+            if next_symbol is not None and symbols_too_similar(candidate, next_symbol):
+                continue
+            if next_symbol is not None and symbol_family(candidate) == symbol_family(next_symbol):
+                continue
+            ordered[index], ordered[swap_index] = ordered[swap_index], ordered[index]
+            break
+    return ordered
+
+def symbol_family(symbol: str) -> int | None:
+    """Возвращает индекс семейства символа для контроля визуального разнообразия."""
+    return SYMBOL_TO_FAMILY.get(symbol)
+
+def symbols_too_similar(left: str, right: str) -> bool:
+    """Проверяет, не относятся ли два символа к одной визуально похожей группе."""
+    if left == right:
+        return True
+    for group in SIMILAR_SYMBOL_GROUPS:
+        if left in group and right in group:
+            return True
+    return False
 
 def render_stitch_preview(
     dmc_grid,
@@ -222,8 +279,9 @@ def image_to_pattern(image_path, target_width, max_colors):
     # Если цветов больше, чем символов в ALL_SYMBOLS, используем кружки с цифрами
     # из диапазона Unicode (chr(9312) = ①, chr(9313) = ② и т.д.).
     color_symbols = {}
+    symbol_priority = build_symbol_priority()
     for i, code in enumerate(sorted_colors):
-        color_symbols[code] = ALL_SYMBOLS[i] if i < len(ALL_SYMBOLS) else chr(9312 + i)
+        color_symbols[code] = symbol_priority[i] if i < len(symbol_priority) else chr(9312 + i)
 
     if target_width <= 120:
         preview_cell_px = 10

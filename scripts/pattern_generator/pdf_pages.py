@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import math
+import colorsys
 
 from reportlab.lib import colors
 from reportlab.lib.units import cm, mm
@@ -15,7 +16,7 @@ from reportlab.lib.units import cm, mm
 from .data import DMC_COLORS, DMC_TO_GAMMA
 from .fonts import FONT, FONT_BOLD
 from .layout import MARGIN, PAGE_H, PAGE_W
-from .pattern_core import get_color_rgb
+from .pattern_core import get_color_rgb, symbol_family, symbols_too_similar
 from .render_settings import (
     LEGEND_BRIGHTNESS,
     LEGEND_CONTRAST,
@@ -26,6 +27,330 @@ from .render_settings import (
     STITCH_RENDER_SATURATION,
     adjust_rgb01,
 )
+
+def _draw_symbol_marker(c, sym, cx, cy, cell, marker_color=(0.05, 0.05, 0.05)):
+    """Рисует контрастный маркер в клетке схемы: фигуру, линию или текст."""
+    size = cell * 0.62
+    half = size / 2
+    c.saveState()
+    c.setFillColor(colors.Color(*marker_color))
+    c.setStrokeColor(colors.Color(*marker_color))
+
+    if sym == "●":
+        c.circle(cx, cy, size * 0.26, fill=True, stroke=False)
+    elif sym == "○":
+        c.setLineWidth(0.9)
+        c.circle(cx, cy, size * 0.28, fill=False, stroke=True)
+    elif sym == "◉":
+        c.circle(cx, cy, size * 0.30, fill=False, stroke=True)
+        c.circle(cx, cy, size * 0.14, fill=True, stroke=False)
+    elif sym == "◎":
+        c.setLineWidth(0.8)
+        c.circle(cx, cy, size * 0.30, fill=False, stroke=True)
+        c.circle(cx, cy, size * 0.17, fill=False, stroke=True)
+    elif sym == "■":
+        c.rect(cx - half * 0.72, cy - half * 0.72, half * 1.44, half * 1.44, fill=True, stroke=False)
+    elif sym == "□":
+        c.setLineWidth(0.9)
+        c.rect(cx - half * 0.72, cy - half * 0.72, half * 1.44, half * 1.44, fill=False, stroke=True)
+    elif sym == "◆":
+        path = c.beginPath()
+        path.moveTo(cx, cy + half * 0.85)
+        path.lineTo(cx + half * 0.85, cy)
+        path.lineTo(cx, cy - half * 0.85)
+        path.lineTo(cx - half * 0.85, cy)
+        path.close()
+        c.drawPath(path, fill=1, stroke=0)
+    elif sym == "◇":
+        c.setLineWidth(0.9)
+        path = c.beginPath()
+        path.moveTo(cx, cy + half * 0.85)
+        path.lineTo(cx + half * 0.85, cy)
+        path.lineTo(cx, cy - half * 0.85)
+        path.lineTo(cx - half * 0.85, cy)
+        path.close()
+        c.drawPath(path, fill=0, stroke=1)
+    elif sym == "▲":
+        path = c.beginPath()
+        path.moveTo(cx, cy + half * 0.9)
+        path.lineTo(cx + half * 0.85, cy - half * 0.75)
+        path.lineTo(cx - half * 0.85, cy - half * 0.75)
+        path.close()
+        c.drawPath(path, fill=1, stroke=0)
+    elif sym == "△":
+        c.setLineWidth(0.9)
+        path = c.beginPath()
+        path.moveTo(cx, cy + half * 0.9)
+        path.lineTo(cx + half * 0.85, cy - half * 0.75)
+        path.lineTo(cx - half * 0.85, cy - half * 0.75)
+        path.close()
+        c.drawPath(path, fill=0, stroke=1)
+    elif sym == "+":
+        c.setLineWidth(1.1)
+        c.line(cx - half * 0.8, cy, cx + half * 0.8, cy)
+        c.line(cx, cy - half * 0.8, cx, cy + half * 0.8)
+    elif sym == "/":
+        c.setLineWidth(1.1)
+        c.line(cx - half * 0.75, cy - half * 0.75, cx + half * 0.75, cy + half * 0.75)
+    elif sym == "\\":
+        c.setLineWidth(1.1)
+        c.line(cx - half * 0.75, cy + half * 0.75, cx + half * 0.75, cy - half * 0.75)
+    elif sym == "-":
+        c.setLineWidth(1.1)
+        c.line(cx - half * 0.8, cy, cx + half * 0.8, cy)
+    elif sym == "|":
+        c.setLineWidth(1.1)
+        c.line(cx, cy - half * 0.8, cx, cy + half * 0.8)
+    elif sym == "×":
+        c.setLineWidth(1.1)
+        c.line(cx - half * 0.8, cy - half * 0.8, cx + half * 0.8, cy + half * 0.8)
+        c.line(cx - half * 0.8, cy + half * 0.8, cx + half * 0.8, cy - half * 0.8)
+    elif sym == "=":
+        c.setLineWidth(1.0)
+        c.line(cx - half * 0.8, cy - half * 0.22, cx + half * 0.8, cy - half * 0.22)
+        c.line(cx - half * 0.8, cy + half * 0.22, cx + half * 0.8, cy + half * 0.22)
+    elif sym == "≠":
+        c.setLineWidth(1.0)
+        c.line(cx - half * 0.75, cy - half * 0.22, cx + half * 0.75, cy - half * 0.22)
+        c.line(cx - half * 0.75, cy + half * 0.22, cx + half * 0.75, cy + half * 0.22)
+        c.line(cx - half * 0.35, cy - half * 0.7, cx + half * 0.35, cy + half * 0.7)
+    elif sym == "÷":
+        c.setLineWidth(1.0)
+        c.line(cx - half * 0.8, cy, cx + half * 0.8, cy)
+        c.circle(cx, cy + half * 0.45, size * 0.07, fill=True, stroke=False)
+        c.circle(cx, cy - half * 0.45, size * 0.07, fill=True, stroke=False)
+    elif sym == "*":
+        c.setLineWidth(1.0)
+        c.line(cx - half * 0.75, cy, cx + half * 0.75, cy)
+        c.line(cx, cy - half * 0.75, cx, cy + half * 0.75)
+        c.line(cx - half * 0.55, cy - half * 0.55, cx + half * 0.55, cy + half * 0.55)
+        c.line(cx - half * 0.55, cy + half * 0.55, cx + half * 0.55, cy - half * 0.55)
+    elif sym == "#":
+        c.setLineWidth(0.9)
+        c.line(cx - half * 0.45, cy - half * 0.8, cx - half * 0.2, cy + half * 0.8)
+        c.line(cx + half * 0.2, cy - half * 0.8, cx + half * 0.45, cy + half * 0.8)
+        c.line(cx - half * 0.8, cy - half * 0.2, cx + half * 0.8, cy - half * 0.2)
+        c.line(cx - half * 0.8, cy + half * 0.2, cx + half * 0.8, cy + half * 0.2)
+    elif sym == "%":
+        c.setLineWidth(0.9)
+        c.line(cx - half * 0.7, cy - half * 0.7, cx + half * 0.7, cy + half * 0.7)
+        c.circle(cx - half * 0.45, cy + half * 0.45, size * 0.08, fill=False, stroke=True)
+        c.circle(cx + half * 0.45, cy - half * 0.45, size * 0.08, fill=False, stroke=True)
+    elif sym == "V":
+        c.setLineWidth(1.1)
+        c.line(cx - half * 0.7, cy + half * 0.55, cx, cy - half * 0.65)
+        c.line(cx, cy - half * 0.65, cx + half * 0.7, cy + half * 0.55)
+    elif sym == "Z":
+        c.setLineWidth(1.0)
+        c.line(cx - half * 0.75, cy + half * 0.7, cx + half * 0.75, cy + half * 0.7)
+        c.line(cx + half * 0.7, cy + half * 0.7, cx - half * 0.7, cy - half * 0.7)
+        c.line(cx - half * 0.75, cy - half * 0.7, cx + half * 0.75, cy - half * 0.7)
+    else:
+        font_size = min(cell * 0.7 / mm * 2.5, 8)
+        c.setFont(FONT_BOLD, font_size)
+        c.drawCentredString(cx, cy - cell * 0.18, sym)
+
+    c.restoreState()
+
+def _is_white_family_code(code, rgb):
+    """Белые и почти белые оттенки показываем пустой клеткой без символа."""
+    code_str = str(code).lower()
+    if code_str in {"blanc", "b5200", "white", "3865", "746"}:
+        return True
+    return all(channel >= 245 for channel in rgb)
+
+def _is_black_family_code(code, rgb):
+    """Чёрные и почти чёрные оттенки показываем как полностью залитую клетку."""
+    code_str = str(code).lower()
+    if code_str in {"310", "black", "3371", "3799"}:
+        return True
+    return all(channel <= 18 for channel in rgb)
+
+def _is_true_black_code(code):
+    """Возвращает True только для базового чёрного цвета, который должен быть чёрным квадратом."""
+    return str(code).lower() in {"310", "black"}
+
+def _is_gray_family_code(code, rgb):
+    """Серые и малонасыщенные средние оттенки показываем диагональю."""
+    spread = max(rgb) - min(rgb)
+    avg = sum(rgb) / 3
+    return spread <= 18 and 40 <= avg <= 220
+
+def _is_light_family_code(code, rgb):
+    """Очень светлые, но не белые оттенки показываем рамкой с точкой."""
+    if _is_white_family_code(code, rgb):
+        return False
+    avg = sum(rgb) / 3
+    return avg >= 225
+
+def _get_light_symbol_variant(code, rgb):
+    """Возвращает вариант спецмаркера для белых и очень светлых оттенков."""
+    code_str = str(code).lower()
+    avg = sum(rgb) / 3
+
+    if _is_white_family_code(code, rgb):
+        if code_str in {"blanc", "b5200", "white", "3865"} or avg >= 250:
+            return "white_outline"
+        return "white_empty"
+
+    if _is_light_family_code(code, rgb):
+        if avg >= 240:
+            return "white_dot"
+        return "white_empty"
+
+    return None
+
+def _stable_variant_index(seed, variants_count):
+    """Стабильно выбирает вариант спецмаркера по коду цвета и символу."""
+    if variants_count <= 0:
+        return 0
+    return sum(ord(ch) for ch in str(seed)) % variants_count
+
+def _get_gray_symbol_variant(code, rgb):
+    """Возвращает вариант спецмаркера для серых и нейтральных оттенков."""
+    if not _is_gray_family_code(code, rgb):
+        return None
+
+    avg = sum(rgb) / 3
+    code_str = str(code).lower()
+
+    if code_str in {"317", "413", "844", "3021", "3787"} or avg < 105:
+        return "gray_slash"
+    if code_str in {"318", "414", "645", "648", "452"} or avg < 165:
+        return "gray_backslash"
+    if code_str in {"415", "453", "644", "927", "3743"} or avg >= 200:
+        return "gray_hline"
+    return "gray_vline"
+
+def _get_special_symbol_variant(code, rgb, sym):
+    """Возвращает уникальный визуальный вариант для каждого специального семейства."""
+    seed = f"{code}:{sym}"
+    avg = sum(rgb) / 3
+
+    if _is_black_family_code(code, rgb):
+        variants = ["black_fill", "black_dot", "black_slash", "black_vline", "black_cross"]
+        return variants[_stable_variant_index(seed, len(variants))]
+
+    if _is_white_family_code(code, rgb):
+        variants = ["white_empty", "white_dot", "white_outline", "white_slash", "white_vline"]
+        return variants[_stable_variant_index(seed, len(variants))]
+
+    if _is_light_family_code(code, rgb):
+        variants = ["white_dot", "white_outline", "white_slash", "white_backslash", "white_hline", "white_vline", "white_cross"]
+        return variants[_stable_variant_index(seed, len(variants))]
+
+    if _is_gray_family_code(code, rgb):
+        variants = ["gray_slash", "gray_backslash", "gray_hline", "gray_vline", "gray_cross", "gray_dot"]
+        base_variant = _get_gray_symbol_variant(code, rgb)
+        preferred = [base_variant] + [variant for variant in variants if variant != base_variant]
+        return preferred[_stable_variant_index(seed, len(preferred))]
+
+    if avg >= 190:
+        variants = ["white_outline", "white_slash", "white_backslash", "white_hline", "white_vline", "white_cross"]
+        return variants[_stable_variant_index(seed, len(variants))]
+
+    if avg >= 125:
+        variants = ["gray_slash", "gray_backslash", "gray_hline", "gray_vline", "gray_cross", "gray_dot"]
+        return variants[_stable_variant_index(seed, len(variants))]
+
+    variants = ["black_fill", "black_dot", "black_slash", "black_vline", "black_cross"]
+    return variants[_stable_variant_index(seed, len(variants))]
+
+def _draw_base_pattern(c, pattern, left, bottom, size):
+    """Рисует базовый ч/б паттерн клетки."""
+    right = left + size
+    top = bottom + size
+    inset = size * 0.16
+    inner_left = left + inset
+    inner_bottom = bottom + inset
+    inner_size = size - inset * 2
+    cx = left + size / 2
+    cy = bottom + size / 2
+
+    if pattern.startswith("black_"):
+        c.setFillColor(colors.Color(0.05, 0.05, 0.05))
+        c.rect(inner_left, inner_bottom, inner_size, inner_size, fill=True, stroke=False)
+
+    if pattern.startswith("white_"):
+        c.setFillColor(colors.white)
+        c.rect(inner_left, inner_bottom, inner_size, inner_size, fill=True, stroke=False)
+
+    if pattern in {"white_outline", "white_dot", "white_slash", "white_backslash", "white_hline", "white_vline", "white_cross"}:
+        c.setStrokeColor(colors.Color(0.35, 0.35, 0.35))
+        c.setLineWidth(0.8 if size >= 10 else 0.45)
+        c.rect(inner_left, inner_bottom, inner_size, inner_size, fill=False, stroke=True)
+
+    if pattern == "white_dot":
+        c.setFillColor(colors.Color(0.1, 0.1, 0.1))
+        c.circle(cx, cy, max(size * 0.10, 0.8), fill=True, stroke=False)
+    elif pattern == "white_slash":
+        c.line(inner_left, inner_bottom, inner_left + inner_size, inner_bottom + inner_size)
+    elif pattern == "white_backslash":
+        c.line(inner_left, inner_bottom + inner_size, inner_left + inner_size, inner_bottom)
+    elif pattern == "white_hline":
+        c.line(inner_left, cy, inner_left + inner_size, cy)
+    elif pattern == "white_vline":
+        c.line(cx, inner_bottom, cx, inner_bottom + inner_size)
+    elif pattern == "white_cross":
+        c.line(inner_left, inner_bottom, inner_left + inner_size, inner_bottom + inner_size)
+        c.line(inner_left, inner_bottom + inner_size, inner_left + inner_size, inner_bottom)
+    elif pattern == "gray_slash":
+        c.setStrokeColor(colors.Color(0.1, 0.1, 0.1))
+        c.setLineWidth(0.9 if size >= 10 else 0.55)
+        c.line(inner_left, inner_bottom, inner_left + inner_size, inner_bottom + inner_size)
+    elif pattern == "gray_backslash":
+        c.setStrokeColor(colors.Color(0.1, 0.1, 0.1))
+        c.setLineWidth(0.9 if size >= 10 else 0.55)
+        c.line(inner_left, inner_bottom + inner_size, inner_left + inner_size, inner_bottom)
+    elif pattern == "gray_hline":
+        c.setStrokeColor(colors.Color(0.1, 0.1, 0.1))
+        c.setLineWidth(0.9 if size >= 10 else 0.55)
+        c.line(inner_left, cy, inner_left + inner_size, cy)
+    elif pattern == "gray_vline":
+        c.setStrokeColor(colors.Color(0.1, 0.1, 0.1))
+        c.setLineWidth(0.9 if size >= 10 else 0.55)
+        c.line(cx, inner_bottom, cx, inner_bottom + inner_size)
+    elif pattern == "gray_cross":
+        c.setStrokeColor(colors.Color(0.1, 0.1, 0.1))
+        c.setLineWidth(0.9 if size >= 10 else 0.5)
+        c.line(inner_left, inner_bottom, inner_left + inner_size, inner_bottom + inner_size)
+        c.line(inner_left, inner_bottom + inner_size, inner_left + inner_size, inner_bottom)
+    elif pattern == "gray_dot":
+        c.setStrokeColor(colors.Color(0.25, 0.25, 0.25))
+        c.setLineWidth(0.8 if size >= 10 else 0.4)
+        c.rect(inner_left, inner_bottom, inner_size, inner_size, fill=False, stroke=True)
+        c.setFillColor(colors.Color(0.1, 0.1, 0.1))
+        c.circle(cx, cy, max(size * 0.09, 0.7), fill=True, stroke=False)
+    elif pattern == "black_dot":
+        c.setFillColor(colors.white)
+        c.circle(cx, cy, max(size * 0.10, 0.8), fill=True, stroke=False)
+    elif pattern == "black_slash":
+        c.setStrokeColor(colors.white)
+        c.setLineWidth(0.9 if size >= 10 else 0.55)
+        c.line(inner_left, inner_bottom, inner_left + inner_size, inner_bottom + inner_size)
+    elif pattern == "black_vline":
+        c.setStrokeColor(colors.white)
+        c.setLineWidth(0.9 if size >= 10 else 0.55)
+        c.line(cx, inner_bottom, cx, inner_bottom + inner_size)
+    elif pattern == "black_cross":
+        c.setStrokeColor(colors.white)
+        c.setLineWidth(0.9 if size >= 10 else 0.5)
+        c.line(inner_left, inner_bottom, inner_left + inner_size, inner_bottom + inner_size)
+        c.line(inner_left, inner_bottom + inner_size, inner_left + inner_size, inner_bottom)
+
+def _draw_legend_special_symbol(c, code, rgb, sym, x, baseline_y):
+    """Рисует символ/спецмаркер в легенде, выровненный по центру строки."""
+    marker_y = baseline_y + 2
+    if _is_true_black_code(code):
+        c.setFillColor(colors.Color(0.05, 0.05, 0.05))
+        c.rect(x - 5, marker_y - 5, 10, 10, fill=True, stroke=False)
+        return
+
+    if _is_white_family_code(code, rgb):
+        _draw_symbol_marker(c, "★", x, marker_y, 7.2)
+        return
+
+    _draw_symbol_marker(c, sym, x, marker_y, 12)
 
 def draw_footer(c, page_w, page_h, brand, brand_note, margin=MARGIN):
     """Рисует нижний колонтитул (бренд + копирайт) на текущей странице PDF."""
@@ -270,132 +595,212 @@ def create_stitch_render_page(c, title, dmc_grid, color_symbols, stitch_counts,
     draw_footer(c, PAGE_W, PAGE_H, brand, brand_note)
     c.showPage()
 
-def create_legend_page(c, title, stitch_counts, color_symbols, aida,
-                       brand, brand_note):
-    """Page 3: DMC Color Legend with symbols, counts, thread length, skeins + Gamma."""
-    c.setFont(FONT_BOLD, 11)
-    c.setFillColor(colors.Color(0.2, 0.2, 0.2))
-    c.drawString(MARGIN, PAGE_H - 40, "Легенда цветов / Список ниток")
-
-    # Table header
-    headers = ["Симв.", "DMC", "Гамма", "Название", "Стежки", "Длина (м)", "Мотки"]
-    col_x = [MARGIN, MARGIN + 35, MARGIN + 80, MARGIN + 140, MARGIN + 290, MARGIN + 375, MARGIN + 440, MARGIN + 495]
-
-    y = PAGE_H - 70
+def _draw_legend_table_header(c, y, headers, col_x):
+    """Рисует строку заголовков таблицы легенды."""
     c.setFont(FONT_BOLD, 7)
-    for i, h in enumerate(headers):
-        c.drawString(col_x[i], y, h)
+    c.setFillColor(colors.Color(0.2, 0.2, 0.2))
+    for i, header in enumerate(headers):
+        c.drawString(col_x[i], y, header)
     y -= 5
     c.setLineWidth(0.5)
     c.line(MARGIN, y, PAGE_W - MARGIN, y)
-    y -= 12
+    return y - 12
 
-    sorted_colors = sorted(stitch_counts.keys(), key=lambda k: -stitch_counts[k])
 
-    # Thread length calculation: each stitch ≈ 24mm of thread on 14ct (both strands)
-    thread_per_stitch = 0.024  # meters per stitch (approximate)
+def _classify_legend_group(code, rgb):
+    """Определяет цветовую группу для легенды."""
+    code_str = str(code).lower()
+    if code_str.startswith("b:"):
+        return "Бленды"
+    if _is_black_family_code(code, rgb):
+        return "Черные и очень темные"
+    if _is_white_family_code(code, rgb):
+        return "Белые и почти белые"
+    if _is_gray_family_code(code, rgb):
+        return "Серые и нейтральные"
+    if _is_light_family_code(code, rgb):
+        return "Очень светлые оттенки"
 
+    r, g, b = [channel / 255.0 for channel in rgb]
+    hue, sat, _ = colorsys.rgb_to_hsv(r, g, b)
+    hue_deg = hue * 360
+
+    if sat < 0.18:
+        return "Приглушенные и сложные"
+    if hue_deg < 18 or hue_deg >= 338:
+        return "Красные и розовые"
+    if hue_deg < 45:
+        return "Оранжевые и персиковые"
+    if hue_deg < 70:
+        return "Желтые и золотистые"
+    if hue_deg < 165:
+        return "Зеленые"
+    if hue_deg < 250:
+        return "Синие и бирюзовые"
+    return "Фиолетовые и сиреневые"
+
+
+def _group_legend_codes(sorted_colors):
+    """Группирует цвета по цветовым семействам."""
+    group_order = [
+        "Бленды",
+        "Белые и почти белые",
+        "Очень светлые оттенки",
+        "Серые и нейтральные",
+        "Желтые и золотистые",
+        "Оранжевые и персиковые",
+        "Красные и розовые",
+        "Зеленые",
+        "Синие и бирюзовые",
+        "Фиолетовые и сиреневые",
+        "Черные и очень темные",
+        "Приглушенные и сложные",
+    ]
+    grouped = {name: [] for name in group_order}
     for code in sorted_colors:
-        if y < 50:
+        grouped[_classify_legend_group(code, get_color_rgb(code))].append(code)
+    return [(name, grouped[name]) for name in group_order if grouped[name]]
+
+
+def _spread_group_codes(group_codes, color_symbols):
+    """Переставляет коды внутри группы, чтобы соседние символы были менее похожи."""
+    remaining = list(group_codes)
+    arranged = []
+
+    while remaining:
+        if not arranged:
+            arranged.append(remaining.pop(0))
+            continue
+
+        best_index = 0
+        best_score = None
+        prev_sym = color_symbols[arranged[-1]]
+        prev_family = symbol_family(prev_sym)
+        prev_prev_sym = color_symbols[arranged[-2]] if len(arranged) > 1 else None
+        prev_prev_family = symbol_family(prev_prev_sym) if prev_prev_sym is not None else None
+
+        for idx, code in enumerate(remaining):
+            candidate = color_symbols[code]
+            candidate_family = symbol_family(candidate)
+            score = 0
+            if symbols_too_similar(prev_sym, candidate):
+                score += 10
+            if prev_family is not None and candidate_family == prev_family:
+                score += 4
+            if prev_prev_sym is not None and symbols_too_similar(prev_prev_sym, candidate):
+                score += 3
+            if prev_prev_family is not None and candidate_family == prev_prev_family:
+                score += 1
+            if best_score is None or score < best_score:
+                best_score = score
+                best_index = idx
+
+        arranged.append(remaining.pop(best_index))
+
+    return arranged
+
+
+def create_legend_page(c, title, stitch_counts, color_symbols, aida,
+                       brand, brand_note):
+    """Page 3: DMC Color Legend grouped by color families."""
+    headers = ["Цвет", "DMC", "Gamma", "Название", "Стежков", "Нить (м)", "Мотков"]
+    col_x = [MARGIN, MARGIN + 35, MARGIN + 80, MARGIN + 140, MARGIN + 290, MARGIN + 375, MARGIN + 440, MARGIN + 495]
+
+    def start_page():
+        c.setFont(FONT_BOLD, 11)
+        c.setFillColor(colors.Color(0.2, 0.2, 0.2))
+        c.drawString(MARGIN, PAGE_H - 40, "Легенда цветов / Условные обозначения")
+        return _draw_legend_table_header(c, PAGE_H - 70, headers, col_x)
+
+    y = start_page()
+    sorted_colors = sorted(stitch_counts.keys(), key=lambda k: -stitch_counts[k])
+    grouped_colors = _group_legend_codes(sorted_colors)
+    thread_per_stitch = 0.024
+
+    for group_name, group_codes in grouped_colors:
+        group_codes = _spread_group_codes(group_codes, color_symbols)
+        if y < 66:
             draw_footer(c, PAGE_W, PAGE_H, brand, brand_note)
             c.showPage()
-            y = PAGE_H - 40
-            c.setFont(FONT_BOLD, 7.5)
-            for i, h in enumerate(headers):
-                c.drawString(col_x[i], y, h)
-            y -= 17
+            y = start_page()
 
-        sym = color_symbols[code]
-        count = stitch_counts[code]
-        thread_m = round(count * thread_per_stitch, 1)
-        skeins = max(1, math.ceil(thread_m / 8.0))
+        c.setFont(FONT_BOLD, 8)
+        c.setFillColor(colors.Color(0.22, 0.22, 0.22))
+        c.drawString(MARGIN, y, group_name)
+        y -= 10
+        c.setStrokeColor(colors.Color(0.82, 0.82, 0.82))
+        c.setLineWidth(0.35)
+        c.line(MARGIN, y, PAGE_W - MARGIN, y)
+        y -= 10
 
-        is_blend = str(code).startswith("b:")
-        if is_blend:
-            # Parse blend: "b:CODE1+CODE2"
-            parts = str(code)[2:].split("+")
-            c1, c2 = parts[0], parts[1]
-            _, rgb1 = DMC_COLORS.get(c1, ("?", (128,128,128)))
-            _, rgb2 = DMC_COLORS.get(c2, ("?", (128,128,128)))
-            # Two half-swatches
-            r1, g1, b1 = adjust_rgb01(
-                tuple(v / 255 for v in rgb1),
-                brightness=LEGEND_BRIGHTNESS,
-                contrast=LEGEND_CONTRAST,
-                saturation=LEGEND_SATURATION,
-            )
-            r2, g2, b2 = adjust_rgb01(
-                tuple(v / 255 for v in rgb2),
-                brightness=LEGEND_BRIGHTNESS,
-                contrast=LEGEND_CONTRAST,
-                saturation=LEGEND_SATURATION,
-            )
-            c.setFillColor(colors.Color(r1,g1,b1))
-            c.rect(col_x[0], y-2, 6, 12, fill=True, stroke=False)
-            c.setFillColor(colors.Color(r2,g2,b2))
-            c.rect(col_x[0]+6, y-2, 6, 12, fill=True, stroke=False)
-            c.setStrokeColor(colors.Color(0.5,0.5,0.5))
-            c.rect(col_x[0], y-2, 12, 12, fill=False)
-            # Symbol
-            c.setFillColor(colors.Color(0.1,0.1,0.1))
-            c.setFont(FONT_BOLD, 9)
-            c.drawCentredString(col_x[0]+22, y, sym)
-            # DMC codes
-            c.setFont(FONT, 7)
-            c.drawString(col_x[1], y, f"{c1}+{c2}")
-            # Gamma
-            g1c = DMC_TO_GAMMA.get(c1, "—")
-            g2c = DMC_TO_GAMMA.get(c2, "—")
-            c.setFillColor(colors.Color(0.3,0.3,0.3))
-            c.drawString(col_x[2], y, f"{g1c}+{g2c}")
-            # Name
-            c.setFillColor(colors.Color(0.1,0.1,0.1))
-            n1, _ = DMC_COLORS.get(c1, ("?", (0,0,0)))
-            n2, _ = DMC_COLORS.get(c2, ("?", (0,0,0)))
-            c.drawString(col_x[3], y, f"БЛЕНД: {n1[:12]}+{n2[:12]}")
-        else:
-            name_ru, rgb = DMC_COLORS.get(code, ("?", (128, 128, 128)))
-            gamma_code = DMC_TO_GAMMA.get(code, "—")
+        for code in group_codes:
+            if y < 50:
+                draw_footer(c, PAGE_W, PAGE_H, brand, brand_note)
+                c.showPage()
+                y = start_page()
+                c.setFont(FONT_BOLD, 8)
+                c.setFillColor(colors.Color(0.22, 0.22, 0.22))
+                c.drawString(MARGIN, y, group_name)
+                y -= 10
+                c.setStrokeColor(colors.Color(0.82, 0.82, 0.82))
+                c.setLineWidth(0.35)
+                c.line(MARGIN, y, PAGE_W - MARGIN, y)
+                y -= 10
 
-            # Color swatch
-            rc, gc, bc = adjust_rgb01(
-                (rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0),
-                brightness=LEGEND_BRIGHTNESS,
-                contrast=LEGEND_CONTRAST,
-                saturation=LEGEND_SATURATION,
-            )
-            c.setFillColor(colors.Color(rc, gc, bc))
-            c.rect(col_x[0], y - 2, 12, 12, fill=True)
-            c.setStrokeColor(colors.Color(0.5, 0.5, 0.5))
-            c.rect(col_x[0], y - 2, 12, 12, fill=False)
+            sym = color_symbols[code]
+            count = stitch_counts[code]
+            thread_m = round(count * thread_per_stitch, 1)
+            skeins = max(1, math.ceil(thread_m / 8.0))
 
-            # Symbol
-            c.setFillColor(colors.Color(0.1, 0.1, 0.1))
-            c.setFont(FONT_BOLD, 9)
-            c.drawCentredString(col_x[0] + 22, y, sym)
+            if str(code).startswith("b:"):
+                c1, c2 = str(code)[2:].split("+")
+                _, rgb1 = DMC_COLORS.get(c1, ("?", (128, 128, 128)))
+                _, rgb2 = DMC_COLORS.get(c2, ("?", (128, 128, 128)))
+                r1, g1, b1 = adjust_rgb01(tuple(v / 255 for v in rgb1), brightness=LEGEND_BRIGHTNESS, contrast=LEGEND_CONTRAST, saturation=LEGEND_SATURATION)
+                r2, g2, b2 = adjust_rgb01(tuple(v / 255 for v in rgb2), brightness=LEGEND_BRIGHTNESS, contrast=LEGEND_CONTRAST, saturation=LEGEND_SATURATION)
+                c.setFillColor(colors.Color(r1, g1, b1))
+                c.rect(col_x[0], y - 4, 6, 12, fill=True, stroke=False)
+                c.setFillColor(colors.Color(r2, g2, b2))
+                c.rect(col_x[0] + 6, y - 4, 6, 12, fill=True, stroke=False)
+                c.setStrokeColor(colors.Color(0.5, 0.5, 0.5))
+                c.rect(col_x[0], y - 4, 12, 12, fill=False)
+                blend_rgb = tuple((a + b) // 2 for a, b in zip(rgb1, rgb2))
+                _draw_legend_special_symbol(c, code, blend_rgb, sym, col_x[0] + 22, y)
+                c.setFont(FONT, 7)
+                c.drawString(col_x[1], y, f"{c1}+{c2}")
+                c.setFillColor(colors.Color(0.3, 0.3, 0.3))
+                c.drawString(col_x[2], y, f"{DMC_TO_GAMMA.get(c1, '???')}+{DMC_TO_GAMMA.get(c2, '???')}")
+                c.setFillColor(colors.Color(0.1, 0.1, 0.1))
+                n1, _ = DMC_COLORS.get(c1, ("?", (0, 0, 0)))
+                n2, _ = DMC_COLORS.get(c2, ("?", (0, 0, 0)))
+                c.drawString(col_x[3], y, f"Бленд: {n1[:12]}+{n2[:12]}")
+            else:
+                name_ru, rgb = DMC_COLORS.get(code, ("?", (128, 128, 128)))
+                gamma_code = DMC_TO_GAMMA.get(code, "???")
+                rc, gc, bc = adjust_rgb01(
+                    (rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0),
+                    brightness=LEGEND_BRIGHTNESS,
+                    contrast=LEGEND_CONTRAST,
+                    saturation=LEGEND_SATURATION,
+                )
+                c.setFillColor(colors.Color(rc, gc, bc))
+                c.rect(col_x[0], y - 4, 12, 12, fill=True)
+                c.setStrokeColor(colors.Color(0.5, 0.5, 0.5))
+                c.rect(col_x[0], y - 4, 12, 12, fill=False)
+                _draw_legend_special_symbol(c, code, rgb, sym, col_x[0] + 22, y)
+                c.setFont(FONT, 7)
+                c.drawString(col_x[1], y, str(code))
+                c.setFillColor(colors.Color(0.3, 0.3, 0.3))
+                c.drawString(col_x[2], y, str(gamma_code))
+                c.setFillColor(colors.Color(0.1, 0.1, 0.1))
+                c.drawString(col_x[3], y, name_ru[:26])
 
-            # DMC code
-            c.setFont(FONT, 7)
-            c.drawString(col_x[1], y, str(code))
+            c.drawRightString(col_x[4] + 50, y, f"{count:,}")
+            c.drawRightString(col_x[5] + 50, y, f"{thread_m}")
+            c.drawRightString(col_x[6] + 30, y, str(skeins))
+            y -= 14
 
-            # Gamma code
-            c.setFillColor(colors.Color(0.3, 0.3, 0.3))
-            c.drawString(col_x[2], y, str(gamma_code))
-
-            # Name
-            c.setFillColor(colors.Color(0.1, 0.1, 0.1))
-            c.drawString(col_x[3], y, name_ru[:26])
-
-        # Stitch count
-        c.drawRightString(col_x[4] + 50, y, f"{count:,}")
-
-        # Thread length
-        c.drawRightString(col_x[5] + 50, y, f"{thread_m}")
-
-        # Skeins
-        c.drawRightString(col_x[6] + 30, y, str(skeins))
-
-        y -= 14
+        y -= 6
 
     draw_footer(c, PAGE_W, PAGE_H, brand, brand_note)
     c.showPage()
@@ -480,11 +885,14 @@ def create_scheme_pages(c, title, dmc_grid, color_symbols, brand, brand_note,
                     c.rect(px, py, cell, cell, fill=True, stroke=False)
 
                     # Symbol
-                    c.setFillColor(colors.Color(0.1, 0.1, 0.1))
-                    font_size = cell * 0.6 / mm * 2.5
-                    font_size = min(font_size, 7)
-                    c.setFont(FONT, font_size)
-                    c.drawCentredString(px + cell / 2, py + cell * 0.2, sym)
+                    if _is_true_black_code(code):
+                        inset = cell * 0.18
+                        c.setFillColor(colors.Color(0.05, 0.05, 0.05))
+                        c.rect(px + inset, py + inset, cell - inset * 2, cell - inset * 2, fill=True, stroke=False)
+                    elif _is_white_family_code(code, rgb):
+                        _draw_symbol_marker(c, "★", px + cell / 2, py + cell / 2, cell * 0.48)
+                    else:
+                        _draw_symbol_marker(c, sym, px + cell / 2, py + cell / 2, cell)
 
             # Grid lines
             c.setStrokeColor(colors.Color(0.75, 0.75, 0.75))
