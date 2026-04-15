@@ -21,6 +21,7 @@ from .render_settings import (
     LEGEND_BRIGHTNESS,
     LEGEND_CONTRAST,
     LEGEND_SATURATION,
+    STITCH_RENDER_BG,
     STITCH_RENDER_BRIGHTNESS,
     STITCH_RENDER_CONTRAST,
     STITCH_RENDER_LIGHTEN,
@@ -506,8 +507,8 @@ def create_stitch_render_page(c, title, dmc_grid, color_symbols, stitch_counts,
     x0 = (PAGE_W - total_w) / 2
     y0 = PAGE_H - 70 - total_h
 
-    # ----- Фон в цвет канвы Aida (бежевый) -----
-    c.setFillColor(colors.Color(0.95, 0.93, 0.88))
+    # ----- Фон в цвет канвы Aida (управляется профилем) -----
+    c.setFillColor(colors.Color(*STITCH_RENDER_BG))
     c.rect(x0 - 5, y0 - 5, total_w + 10, total_h + 10, fill=True)
 
     # Насколько осветляем цвета при рендере: 0..1.

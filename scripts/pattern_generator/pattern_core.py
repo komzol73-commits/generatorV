@@ -14,6 +14,8 @@ from sklearn.cluster import KMeans
 
 from .data import ALL_SYMBOLS, DMC_COLORS, SIMILAR_SYMBOL_GROUPS, SYMBOL_FAMILIES
 from .render_settings import (
+    CANVAS_COLOR,
+    GRID_COLOR_BASE,
     PREVIEW_BRIGHTNESS,
     PREVIEW_BORDER_WIDTH,
     PREVIEW_CONTRAST,
@@ -131,7 +133,7 @@ def render_stitch_preview(
 
     render_scale = 2
     cell_px_hr = cell_px * render_scale
-    canvas_color = (196, 192, 188)
+    canvas_color = CANVAS_COLOR
     preview = Image.new("RGB", (grid_w * cell_px_hr, grid_h * cell_px_hr), canvas_color)
     draw = ImageDraw.Draw(preview)
 
@@ -142,7 +144,7 @@ def render_stitch_preview(
     stitch_core_width = max(1, stitch_width - 3)
     highlight_length = max(2, int(round(cell_px_hr * PREVIEW_STITCH_HIGHLIGHT_LENGTH)))
     grid_color = adjust_rgb8(
-        (221, 212, 193),
+        GRID_COLOR_BASE,
         brightness=PREVIEW_GRID_BRIGHTNESS,
         contrast=PREVIEW_GRID_CONTRAST,
         saturation=PREVIEW_GRID_SATURATION,

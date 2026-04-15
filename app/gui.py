@@ -19,9 +19,12 @@ from .gui_support import (
     compute_dimension_summary,
     configure_ttk_styles,
     format_command,
+    get_profile_description,
+    load_color_profiles,
     load_preview_image,
     open_in_system,
     resolve_ui_font,
+    save_active_profile,
 )
 from .runner import DEFAULT_OUTPUT_DIR, build_command, build_subprocess_env
 
@@ -43,6 +46,11 @@ class CrossStitchApp:
         self.title = StringVar(value="")
         self.use_blends = BooleanVar(value=False)
         self.no_oxs = BooleanVar(value=False)
+
+        profile_names, active_profile = load_color_profiles()
+        self._profile_names = profile_names
+        self.active_profile = StringVar(value=active_profile)
+        self._profile_desc = StringVar(value=get_profile_description(active_profile))
 
         self.size_summary = StringVar(value="180 крестиков по ширине")
         self.fabric_summary = StringVar(value="Размер на канве 14 ct: 32.7 см по ширине")
@@ -109,6 +117,25 @@ class CrossStitchApp:
         ttk.Checkbutton(settings_box, text="Без OXS", variable=self.no_oxs).grid(row=2, column=2, columnspan=2, sticky=W, pady=4)
         ttk.Label(settings_box, textvariable=self.size_summary).grid(row=3, column=0, columnspan=3, sticky=W, pady=(8, 0))
         ttk.Label(settings_box, textvariable=self.fabric_summary).grid(row=3, column=3, columnspan=3, sticky=W, pady=(8, 0))
+
+        profile_box = ttk.LabelFrame(parent, text="Цветовой профиль", padding=10)
+        profile_box.pack(fill=X, pady=(12, 0))
+        ttk.Label(profile_box, text="Профиль").grid(row=0, column=0, sticky=W, pady=4)
+        self._profile_combo = ttk.Combobox(
+            profile_box,
+            textvariable=self.active_profile,
+            values=self._profile_names,
+            state="readonly",
+            width=36,
+        )
+        self._profile_combo.grid(row=0, column=1, sticky=W, padx=(8, 10), pady=4)
+        self._profile_combo.bind("<<ComboboxSelected>>", self._on_profile_changed)
+        self._profile_desc_label = ttk.Label(
+            profile_box,
+            textvariable=self._profile_desc,
+            foreground="#666666",
+        )
+        self._profile_desc_label.grid(row=1, column=0, columnspan=2, sticky=W, pady=(0, 4))
 
         actions = ttk.Frame(parent)
         actions.pack(fill=X, pady=(14, 0))
@@ -218,6 +245,11 @@ class CrossStitchApp:
             )
         except OSError:
             pass
+
+    def _on_profile_changed(self, _event=None) -> None:
+        name = self.active_profile.get()
+        save_active_profile(name)
+        self._profile_desc.set(get_profile_description(name))
 
     def _validate(self):
         if not self.image_path.get().strip():

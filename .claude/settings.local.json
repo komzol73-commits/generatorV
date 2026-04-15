@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from scripts.pattern_generator.render_settings import CANVAS_COLOR, GRID_COLOR_BASE, STITCH_RENDER_BG, PREVIEW_BRIGHTNESS, PREVIEW_SATURATION; print\\('CANVAS_COLOR:', CANVAS_COLOR\\); print\\('PREVIEW_SATURATION:', PREVIEW_SATURATION\\)\")",
+      "Bash(python -c \"from app.gui_support import load_color_profiles, get_profile_description; names, active = load_color_profiles\\(\\); print\\('Profiles:', names\\); print\\('Active:', active\\); print\\('Desc:', get_profile_description\\(active\\)\\)\")",
+      "Bash(python -c \"from app.gui import main; print\\('GUI import OK'\\)\")"
+    ]
+  }
+}

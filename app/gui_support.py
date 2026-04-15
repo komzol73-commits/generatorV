@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import tkinter as tk
 import tkinter.font as tkfont
@@ -13,6 +14,9 @@ from pathlib import Path
 from tkinter import END, ttk
 
 from PIL import Image, ImageTk
+
+# Путь к файлу цветовых профилей
+PROFILES_PATH = Path(__file__).resolve().parent.parent / "scripts" / "color_profiles.json"
 
 
 def resolve_ui_font(root: tk.Misc, preferred: str = "Inter", fallback: str = "Segoe UI") -> str:
@@ -64,3 +68,42 @@ def open_in_system(path: Path) -> None:
 
 def format_command(command: list[str]) -> str:
     return ' '.join(f'"{part}"' if ' ' in part else part for part in command)
+
+
+def load_color_profiles() -> tuple[list[str], str]:
+    """Возвращает (список имён профилей, имя активного профиля)."""
+    if not PROFILES_PATH.exists():
+        return [], ""
+    try:
+        data = json.loads(PROFILES_PATH.read_text(encoding="utf-8"))
+        names = [p["name"] for p in data.get("profiles", []) if "name" in p]
+        active = data.get("active", names[0] if names else "")
+        return names, active
+    except (OSError, json.JSONDecodeError, KeyError):
+        return [], ""
+
+
+def save_active_profile(name: str) -> None:
+    """Записывает имя активного профиля в color_profiles.json."""
+    if not PROFILES_PATH.exists():
+        return
+    try:
+        data = json.loads(PROFILES_PATH.read_text(encoding="utf-8"))
+        data["active"] = name
+        PROFILES_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except (OSError, json.JSONDecodeError):
+        pass
+
+
+def get_profile_description(name: str) -> str:
+    """Возвращает описание профиля по его имени, или пустую строку."""
+    if not PROFILES_PATH.exists():
+        return ""
+    try:
+        data = json.loads(PROFILES_PATH.read_text(encoding="utf-8"))
+        for p in data.get("profiles", []):
+            if p.get("name") == name:
+                return p.get("description", "")
+    except (OSError, json.JSONDecodeError):
+        pass
+    return ""
