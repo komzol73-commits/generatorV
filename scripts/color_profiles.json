@@ -1,5 +1,5 @@
 {
-  "active": "Нейтральный (без желтизны)",
+  "active": "Холодный",
   "profiles": [
     {
       "name": "Тёплый (классический)",
@@ -43,56 +43,80 @@
     {
       "name": "Нейтральный (без желтизны)",
       "description": "Чисто серая канва, насыщенность без изменений. Цвета максимально близки к DMC.",
-      "canvas_color": [195, 195, 195],
-      "grid_color_base": [208, 208, 208],
-      "stitch_render_bg": [0.94, 0.94, 0.94],
-      "preview_brightness": 1.00,
+      "canvas_color": [
+        195,
+        195,
+        195
+      ],
+      "grid_color_base": [
+        208,
+        208,
+        208
+      ],
+      "stitch_render_bg": [
+        0.94,
+        0.94,
+        0.94
+      ],
+      "preview_brightness": 1.0,
       "preview_contrast": 1.02,
-      "preview_saturation": 1.00,
+      "preview_saturation": 1.0,
       "preview_border_width": 0,
-      "preview_grid_brightness": 1.00,
-      "preview_grid_contrast": 0.80,
-      "preview_grid_saturation": 0.10,
+      "preview_grid_brightness": 1.0,
+      "preview_grid_contrast": 0.8,
+      "preview_grid_saturation": 0.1,
       "preview_stitch_width_scale": 0.56,
       "preview_stitch_fill_mix": 0.06,
       "preview_stitch_shadow_strength": 10,
       "preview_stitch_highlight_strength": 21,
       "preview_stitch_inner_pad": 1,
       "preview_stitch_highlight_length": 0.34,
-      "stitch_render_brightness": 1.00,
-      "stitch_render_contrast": 1.00,
-      "stitch_render_saturation": 1.00,
-      "stitch_render_lighten": 0.10,
-      "legend_brightness": 1.00,
-      "legend_contrast": 1.00,
-      "legend_saturation": 1.00
+      "stitch_render_brightness": 1.0,
+      "stitch_render_contrast": 1.0,
+      "stitch_render_saturation": 1.0,
+      "stitch_render_lighten": 0.1,
+      "legend_brightness": 1.0,
+      "legend_contrast": 1.0,
+      "legend_saturation": 1.0
     },
     {
       "name": "Холодный",
       "description": "Голубоватая канва, сниженная насыщенность. Компенсирует тёплый/жёлтый сдвиг при подборе DMC-цветов.",
-      "canvas_color": [190, 193, 200],
-      "grid_color_base": [204, 206, 213],
-      "stitch_render_bg": [0.92, 0.93, 0.96],
-      "preview_brightness": 1.00,
+      "canvas_color": [
+        190,
+        193,
+        200
+      ],
+      "grid_color_base": [
+        204,
+        206,
+        213
+      ],
+      "stitch_render_bg": [
+        0.92,
+        0.93,
+        0.96
+      ],
+      "preview_brightness": 1.0,
       "preview_contrast": 1.02,
       "preview_saturation": 0.92,
       "preview_border_width": 0,
-      "preview_grid_brightness": 1.00,
-      "preview_grid_contrast": 0.80,
+      "preview_grid_brightness": 1.0,
+      "preview_grid_contrast": 0.8,
       "preview_grid_saturation": 0.08,
       "preview_stitch_width_scale": 0.56,
-      "preview_stitch_fill_mix": 0.10,
+      "preview_stitch_fill_mix": 0.1,
       "preview_stitch_shadow_strength": 10,
       "preview_stitch_highlight_strength": 21,
       "preview_stitch_inner_pad": 1,
       "preview_stitch_highlight_length": 0.34,
-      "stitch_render_brightness": 1.00,
-      "stitch_render_contrast": 1.00,
+      "stitch_render_brightness": 1.0,
+      "stitch_render_contrast": 1.0,
       "stitch_render_saturation": 0.92,
-      "stitch_render_lighten": 0.10,
-      "legend_brightness": 1.00,
-      "legend_contrast": 1.00,
-      "legend_saturation": 1.00
+      "stitch_render_lighten": 0.1,
+      "legend_brightness": 1.0,
+      "legend_contrast": 1.0,
+      "legend_saturation": 1.0
     }
   ]
 }

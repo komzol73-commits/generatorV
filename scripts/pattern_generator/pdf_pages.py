@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import math
 import colorsys
+from math import cos, pi, sin
 
 from reportlab.lib import colors
 from reportlab.lib.units import cm, mm
@@ -29,87 +30,132 @@ from .render_settings import (
     adjust_rgb01,
 )
 
+BACKGROUND_SYMBOL = "★"
+
+def _draw_background_star(c, cx, cy, size):
+    """Рисует маленькую чёрную звезду как вектор, без зависимости от шрифта."""
+    outer = size * 0.5
+    inner = outer * 0.44
+    path = c.beginPath()
+    for index in range(10):
+        angle = -pi / 2 + index * pi / 5
+        radius = outer if index % 2 == 0 else inner
+        x = cx + cos(angle) * radius
+        y = cy + sin(angle) * radius
+        if index == 0:
+            path.moveTo(x, y)
+        else:
+            path.lineTo(x, y)
+    path.close()
+    c.drawPath(path, fill=1, stroke=0)
+
+
 def _draw_symbol_marker(c, sym, cx, cy, cell, marker_color=(0.05, 0.05, 0.05)):
     """Рисует контрастный маркер в клетке схемы: фигуру, линию или текст."""
-    size = cell * 0.62
+    size = cell * 0.72
     half = size / 2
+    strong_line = max(1.15, cell * 0.24)
+    medium_line = max(1.0, cell * 0.20)
     c.saveState()
     c.setFillColor(colors.Color(*marker_color))
     c.setStrokeColor(colors.Color(*marker_color))
 
-    if sym == "●":
-        c.circle(cx, cy, size * 0.26, fill=True, stroke=False)
+    if sym == BACKGROUND_SYMBOL:
+        _draw_background_star(c, cx, cy, size * 0.78)
+    elif sym == "●":
+        c.circle(cx, cy, size * 0.30, fill=True, stroke=False)
     elif sym == "○":
-        c.setLineWidth(0.9)
-        c.circle(cx, cy, size * 0.28, fill=False, stroke=True)
+        c.setLineWidth(medium_line)
+        c.circle(cx, cy, size * 0.31, fill=False, stroke=True)
+    elif sym == "□":
+        c.setLineWidth(medium_line)
+        c.rect(cx - half * 0.70, cy - half * 0.70, half * 1.40, half * 1.40, fill=False, stroke=True)
     elif sym == "◉":
         c.circle(cx, cy, size * 0.30, fill=False, stroke=True)
         c.circle(cx, cy, size * 0.14, fill=True, stroke=False)
+    elif sym == "◇":
+        c.setLineWidth(medium_line)
+        path = c.beginPath()
+        path.moveTo(cx, cy + half * 0.88)
+        path.lineTo(cx + half * 0.88, cy)
+        path.lineTo(cx, cy - half * 0.88)
+        path.lineTo(cx - half * 0.88, cy)
+        path.close()
+        c.drawPath(path, fill=0, stroke=1)
     elif sym == "◎":
         c.setLineWidth(0.8)
         c.circle(cx, cy, size * 0.30, fill=False, stroke=True)
         c.circle(cx, cy, size * 0.17, fill=False, stroke=True)
     elif sym == "■":
-        c.rect(cx - half * 0.72, cy - half * 0.72, half * 1.44, half * 1.44, fill=True, stroke=False)
-    elif sym == "□":
-        c.setLineWidth(0.9)
-        c.rect(cx - half * 0.72, cy - half * 0.72, half * 1.44, half * 1.44, fill=False, stroke=True)
+        c.rect(cx - half * 0.78, cy - half * 0.78, half * 1.56, half * 1.56, fill=True, stroke=False)
     elif sym == "◆":
         path = c.beginPath()
-        path.moveTo(cx, cy + half * 0.85)
-        path.lineTo(cx + half * 0.85, cy)
-        path.lineTo(cx, cy - half * 0.85)
-        path.lineTo(cx - half * 0.85, cy)
+        path.moveTo(cx, cy + half * 0.92)
+        path.lineTo(cx + half * 0.92, cy)
+        path.lineTo(cx, cy - half * 0.92)
+        path.lineTo(cx - half * 0.92, cy)
         path.close()
         c.drawPath(path, fill=1, stroke=0)
-    elif sym == "◇":
-        c.setLineWidth(0.9)
-        path = c.beginPath()
-        path.moveTo(cx, cy + half * 0.85)
-        path.lineTo(cx + half * 0.85, cy)
-        path.lineTo(cx, cy - half * 0.85)
-        path.lineTo(cx - half * 0.85, cy)
-        path.close()
-        c.drawPath(path, fill=0, stroke=1)
     elif sym == "▲":
         path = c.beginPath()
-        path.moveTo(cx, cy + half * 0.9)
-        path.lineTo(cx + half * 0.85, cy - half * 0.75)
-        path.lineTo(cx - half * 0.85, cy - half * 0.75)
+        path.moveTo(cx, cy + half * 0.96)
+        path.lineTo(cx + half * 0.92, cy - half * 0.82)
+        path.lineTo(cx - half * 0.92, cy - half * 0.82)
         path.close()
         c.drawPath(path, fill=1, stroke=0)
     elif sym == "△":
-        c.setLineWidth(0.9)
+        c.setLineWidth(medium_line)
         path = c.beginPath()
-        path.moveTo(cx, cy + half * 0.9)
-        path.lineTo(cx + half * 0.85, cy - half * 0.75)
-        path.lineTo(cx - half * 0.85, cy - half * 0.75)
+        path.moveTo(cx, cy + half * 0.92)
+        path.lineTo(cx + half * 0.88, cy - half * 0.78)
+        path.lineTo(cx - half * 0.88, cy - half * 0.78)
         path.close()
         c.drawPath(path, fill=0, stroke=1)
+    elif sym == "▼":
+        path = c.beginPath()
+        path.moveTo(cx, cy - half * 0.96)
+        path.lineTo(cx + half * 0.92, cy + half * 0.82)
+        path.lineTo(cx - half * 0.92, cy + half * 0.82)
+        path.close()
+        c.drawPath(path, fill=1, stroke=0)
+    elif sym == "◀":
+        path = c.beginPath()
+        path.moveTo(cx - half * 0.96, cy)
+        path.lineTo(cx + half * 0.84, cy + half * 0.92)
+        path.lineTo(cx + half * 0.84, cy - half * 0.92)
+        path.close()
+        c.drawPath(path, fill=1, stroke=0)
     elif sym == "+":
-        c.setLineWidth(1.1)
-        c.line(cx - half * 0.8, cy, cx + half * 0.8, cy)
-        c.line(cx, cy - half * 0.8, cx, cy + half * 0.8)
+        c.setLineWidth(strong_line)
+        c.line(cx - half * 0.86, cy, cx + half * 0.86, cy)
+        c.line(cx, cy - half * 0.86, cx, cy + half * 0.86)
     elif sym == "/":
-        c.setLineWidth(1.1)
-        c.line(cx - half * 0.75, cy - half * 0.75, cx + half * 0.75, cy + half * 0.75)
+        c.setLineWidth(strong_line)
+        c.line(cx - half * 0.86, cy - half * 0.86, cx + half * 0.86, cy + half * 0.86)
     elif sym == "\\":
-        c.setLineWidth(1.1)
-        c.line(cx - half * 0.75, cy + half * 0.75, cx + half * 0.75, cy - half * 0.75)
+        c.setLineWidth(strong_line)
+        c.line(cx - half * 0.86, cy + half * 0.86, cx + half * 0.86, cy - half * 0.86)
     elif sym == "-":
-        c.setLineWidth(1.1)
-        c.line(cx - half * 0.8, cy, cx + half * 0.8, cy)
+        c.setLineWidth(strong_line)
+        c.line(cx - half * 0.88, cy, cx + half * 0.88, cy)
     elif sym == "|":
-        c.setLineWidth(1.1)
-        c.line(cx, cy - half * 0.8, cx, cy + half * 0.8)
+        inset = half * 0.82
+        c.setFillColor(colors.Color(*marker_color))
+        c.rect(cx - inset, cy - inset, inset * 2, inset * 2, fill=True, stroke=False)
+        c.setStrokeColor(colors.white)
+        c.setLineWidth(strong_line)
+        c.line(cx, cy - inset, cx, cy + inset)
     elif sym == "×":
         c.setLineWidth(1.1)
         c.line(cx - half * 0.8, cy - half * 0.8, cx + half * 0.8, cy + half * 0.8)
         c.line(cx - half * 0.8, cy + half * 0.8, cx + half * 0.8, cy - half * 0.8)
     elif sym == "=":
-        c.setLineWidth(1.0)
-        c.line(cx - half * 0.8, cy - half * 0.22, cx + half * 0.8, cy - half * 0.22)
-        c.line(cx - half * 0.8, cy + half * 0.22, cx + half * 0.8, cy + half * 0.22)
+        inset = half * 0.82
+        c.setFillColor(colors.Color(*marker_color))
+        c.rect(cx - inset, cy - inset, inset * 2, inset * 2, fill=True, stroke=False)
+        c.setStrokeColor(colors.white)
+        c.setLineWidth(medium_line)
+        c.line(cx - inset, cy, cx + inset, cy)
     elif sym == "≠":
         c.setLineWidth(1.0)
         c.line(cx - half * 0.75, cy - half * 0.22, cx + half * 0.75, cy - half * 0.22)
@@ -127,11 +173,13 @@ def _draw_symbol_marker(c, sym, cx, cy, cell, marker_color=(0.05, 0.05, 0.05)):
         c.line(cx - half * 0.55, cy - half * 0.55, cx + half * 0.55, cy + half * 0.55)
         c.line(cx - half * 0.55, cy + half * 0.55, cx + half * 0.55, cy - half * 0.55)
     elif sym == "#":
-        c.setLineWidth(0.9)
-        c.line(cx - half * 0.45, cy - half * 0.8, cx - half * 0.2, cy + half * 0.8)
-        c.line(cx + half * 0.2, cy - half * 0.8, cx + half * 0.45, cy + half * 0.8)
-        c.line(cx - half * 0.8, cy - half * 0.2, cx + half * 0.8, cy - half * 0.2)
-        c.line(cx - half * 0.8, cy + half * 0.2, cx + half * 0.8, cy + half * 0.2)
+        inset = half * 0.82
+        c.setFillColor(colors.Color(*marker_color))
+        c.rect(cx - inset, cy - inset, inset * 2, inset * 2, fill=True, stroke=False)
+        c.setStrokeColor(colors.white)
+        c.setLineWidth(medium_line)
+        c.line(cx - inset * 0.72, cy - inset * 0.72, cx + inset * 0.72, cy + inset * 0.72)
+        c.line(cx - inset * 0.72, cy + inset * 0.72, cx + inset * 0.72, cy - inset * 0.72)
     elif sym == "%":
         c.setLineWidth(0.9)
         c.line(cx - half * 0.7, cy - half * 0.7, cx + half * 0.7, cy + half * 0.7)
@@ -147,7 +195,7 @@ def _draw_symbol_marker(c, sym, cx, cy, cell, marker_color=(0.05, 0.05, 0.05)):
         c.line(cx + half * 0.7, cy + half * 0.7, cx - half * 0.7, cy - half * 0.7)
         c.line(cx - half * 0.75, cy - half * 0.7, cx + half * 0.75, cy - half * 0.7)
     else:
-        font_size = min(cell * 0.7 / mm * 2.5, 8)
+        font_size = min(cell * 0.74 / mm * 2.5, 8.2)
         c.setFont(FONT_BOLD, font_size)
         c.drawCentredString(cx, cy - cell * 0.18, sym)
 
@@ -339,16 +387,15 @@ def _draw_base_pattern(c, pattern, left, bottom, size):
         c.line(inner_left, inner_bottom, inner_left + inner_size, inner_bottom + inner_size)
         c.line(inner_left, inner_bottom + inner_size, inner_left + inner_size, inner_bottom)
 
-def _draw_legend_special_symbol(c, code, rgb, sym, x, baseline_y):
+def _draw_legend_special_symbol(c, code, rgb, sym, x, baseline_y, background_code=None):
     """Рисует символ/спецмаркер в легенде, выровненный по центру строки."""
     marker_y = baseline_y + 2
-    if _is_true_black_code(code):
+    if background_code is not None and code == background_code:
+        c.saveState()
         c.setFillColor(colors.Color(0.05, 0.05, 0.05))
-        c.rect(x - 5, marker_y - 5, 10, 10, fill=True, stroke=False)
-        return
-
-    if _is_white_family_code(code, rgb):
-        _draw_symbol_marker(c, "★", x, marker_y, 7.2)
+        c.setStrokeColor(colors.Color(0.05, 0.05, 0.05))
+        _draw_background_star(c, x, marker_y, 6.0)
+        c.restoreState()
         return
 
     _draw_symbol_marker(c, sym, x, marker_y, 12)
@@ -702,7 +749,7 @@ def _spread_group_codes(group_codes, color_symbols):
 
 
 def create_legend_page(c, title, stitch_counts, color_symbols, aida,
-                       brand, brand_note):
+                       brand, brand_note, background_code=None):
     """Page 3: DMC Color Legend grouped by color families."""
     headers = ["Цвет", "DMC", "Gamma", "Название", "Стежков", "Нить (м)", "Мотков"]
     col_x = [MARGIN, MARGIN + 35, MARGIN + 80, MARGIN + 140, MARGIN + 290, MARGIN + 375, MARGIN + 440, MARGIN + 495]
@@ -766,7 +813,7 @@ def create_legend_page(c, title, stitch_counts, color_symbols, aida,
                 c.setStrokeColor(colors.Color(0.5, 0.5, 0.5))
                 c.rect(col_x[0], y - 4, 12, 12, fill=False)
                 blend_rgb = tuple((a + b) // 2 for a, b in zip(rgb1, rgb2))
-                _draw_legend_special_symbol(c, code, blend_rgb, sym, col_x[0] + 22, y)
+                _draw_legend_special_symbol(c, code, blend_rgb, sym, col_x[0] + 22, y, background_code=background_code)
                 c.setFont(FONT, 7)
                 c.drawString(col_x[1], y, f"{c1}+{c2}")
                 c.setFillColor(colors.Color(0.3, 0.3, 0.3))
@@ -788,7 +835,7 @@ def create_legend_page(c, title, stitch_counts, color_symbols, aida,
                 c.rect(col_x[0], y - 4, 12, 12, fill=True)
                 c.setStrokeColor(colors.Color(0.5, 0.5, 0.5))
                 c.rect(col_x[0], y - 4, 12, 12, fill=False)
-                _draw_legend_special_symbol(c, code, rgb, sym, col_x[0] + 22, y)
+                _draw_legend_special_symbol(c, code, rgb, sym, col_x[0] + 22, y, background_code=background_code)
                 c.setFont(FONT, 7)
                 c.drawString(col_x[1], y, str(code))
                 c.setFillColor(colors.Color(0.3, 0.3, 0.3))
@@ -807,7 +854,7 @@ def create_legend_page(c, title, stitch_counts, color_symbols, aida,
     c.showPage()
 
 def create_scheme_pages(c, title, dmc_grid, color_symbols, brand, brand_note,
-                        cell_size_mm=4.0):
+                        cell_size_mm=4.0, background_code=None):
     """Create symbol scheme pages divided into sections."""
     grid_h = len(dmc_grid)
     grid_w = len(dmc_grid[0])
@@ -876,22 +923,22 @@ def create_scheme_pages(c, title, dmc_grid, color_symbols, brand, brand_note,
 
                     px = x0 + col_idx * cell
 
-                    # Background color (light tint)
+                    # Background color
                     rc, gc, bc = rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0
-                    # Make background lighter
-                    bg_r = 0.7 + 0.3 * rc
-                    bg_g = 0.7 + 0.3 * gc
-                    bg_b = 0.7 + 0.3 * bc
+                    # Делаем подкраску заметнее, чтобы цветовые блоки читались как отдельные пятна.
+                    bg_r = 0.58 + 0.42 * rc
+                    bg_g = 0.58 + 0.42 * gc
+                    bg_b = 0.58 + 0.42 * bc
                     c.setFillColor(colors.Color(bg_r, bg_g, bg_b))
                     c.rect(px, py, cell, cell, fill=True, stroke=False)
 
-                    # Symbol
-                    if _is_true_black_code(code):
-                        inset = cell * 0.18
+                    # Контрастный маркер
+                    if background_code is not None and code == background_code:
+                        c.saveState()
                         c.setFillColor(colors.Color(0.05, 0.05, 0.05))
-                        c.rect(px + inset, py + inset, cell - inset * 2, cell - inset * 2, fill=True, stroke=False)
-                    elif _is_white_family_code(code, rgb):
-                        _draw_symbol_marker(c, "★", px + cell / 2, py + cell / 2, cell * 0.48)
+                        c.setStrokeColor(colors.Color(0.05, 0.05, 0.05))
+                        _draw_background_star(c, px + cell / 2, py + cell / 2, cell * 0.28)
+                        c.restoreState()
                     else:
                         _draw_symbol_marker(c, sym, px + cell / 2, py + cell / 2, cell)
 

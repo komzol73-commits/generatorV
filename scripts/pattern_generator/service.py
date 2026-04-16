@@ -12,11 +12,47 @@ from reportlab.pdfgen import canvas
 from .exporters import export_oxs
 from .pattern_core import build_symbol_priority, detect_blends, image_to_pattern
 from .pdf_pages import (
+    BACKGROUND_SYMBOL,
     create_legend_page,
     create_scheme_pages,
     create_stitch_render_page,
     create_title_page,
 )
+
+
+def _assign_background_symbol(stitch_counts, color_symbols, symbol_priority):
+    """Резервирует звёздочку только для самого частого цвета схемы."""
+    if not stitch_counts:
+        return None
+
+    background_code = max(stitch_counts, key=stitch_counts.get)
+    current_owner = next(
+        (code for code, symbol in color_symbols.items() if symbol == BACKGROUND_SYMBOL),
+        None,
+    )
+
+    if current_owner == background_code:
+        return background_code
+
+    if current_owner is not None:
+        used_without_owner = {
+            symbol
+            for code, symbol in color_symbols.items()
+            if code not in {current_owner, background_code}
+        }
+        replacement = next(
+            (
+                symbol
+                for symbol in symbol_priority
+                if symbol != BACKGROUND_SYMBOL and symbol not in used_without_owner
+            ),
+            None,
+        )
+        if replacement is not None:
+            color_symbols[current_owner] = replacement
+
+    color_symbols[background_code] = BACKGROUND_SYMBOL
+    return background_code
 
 def generate_pattern(image_path, output_path, target_width=200, max_colors=38,
                      title="Схема вышивки крестиком", brand="Твоя вышивка",
@@ -103,6 +139,8 @@ def generate_pattern(image_path, output_path, target_width=200, max_colors=38,
                             break
                 print(f"Region replace {old_sym} (DMC {old_code}) → DMC {new_code} in rows {y_min}-{y_max} ({count} stitches)")
 
+    background_code = _assign_background_symbol(stitch_counts, color_symbols, symbol_priority)
+
     c_pdf = canvas.Canvas(output_path, pagesize=A4)
     c_pdf.setTitle(title)
     c_pdf.setAuthor(author if author else brand)
@@ -117,11 +155,11 @@ def generate_pattern(image_path, output_path, target_width=200, max_colors=38,
 
     print("Creating legend page...")
     create_legend_page(c_pdf, title, stitch_counts, color_symbols, aida,
-                       brand, brand_note)
+                       brand, brand_note, background_code=background_code)
 
     print("Creating scheme pages...")
     create_scheme_pages(c_pdf, title, dmc_grid, color_symbols, brand, brand_note,
-                        cell_size_mm)
+                        cell_size_mm, background_code=background_code)
 
     c_pdf.save()
 
