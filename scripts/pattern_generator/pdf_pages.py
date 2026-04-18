@@ -748,8 +748,16 @@ def _spread_group_codes(group_codes, color_symbols):
     return arranged
 
 
+def _estimate_thread_usage(stitch_count, fabric_count, strands=2, overhead=1.2):
+    """Оценивает метры и мотки ниток для цвета."""
+    meters_per_stitch = 0.02 * (strands / 2) * (14 / fabric_count)
+    meters = stitch_count * meters_per_stitch * overhead
+    skeins = max(1, math.ceil(meters / 24.0)) if stitch_count > 0 else 0
+    return round(meters, 1), skeins
+
+
 def create_legend_page(c, title, stitch_counts, color_symbols, aida,
-                       brand, brand_note, background_code=None):
+                       brand, brand_note, background_code=None, strands=2):
     """Page 3: DMC Color Legend grouped by color families."""
     headers = ["Цвет", "DMC", "Gamma", "Название", "Стежков", "Нить (м)", "Мотков"]
     col_x = [MARGIN, MARGIN + 35, MARGIN + 80, MARGIN + 140, MARGIN + 290, MARGIN + 375, MARGIN + 440, MARGIN + 495]
@@ -763,7 +771,6 @@ def create_legend_page(c, title, stitch_counts, color_symbols, aida,
     y = start_page()
     sorted_colors = sorted(stitch_counts.keys(), key=lambda k: -stitch_counts[k])
     grouped_colors = _group_legend_codes(sorted_colors)
-    thread_per_stitch = 0.024
 
     for group_name, group_codes in grouped_colors:
         group_codes = _spread_group_codes(group_codes, color_symbols)
@@ -797,8 +804,7 @@ def create_legend_page(c, title, stitch_counts, color_symbols, aida,
 
             sym = color_symbols[code]
             count = stitch_counts[code]
-            thread_m = round(count * thread_per_stitch, 1)
-            skeins = max(1, math.ceil(thread_m / 8.0))
+            thread_m, skeins = _estimate_thread_usage(count, aida, strands=strands)
 
             if str(code).startswith("b:"):
                 c1, c2 = str(code)[2:].split("+")
